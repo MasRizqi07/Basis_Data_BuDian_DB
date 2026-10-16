@@ -1,17 +1,17 @@
+const { randomBytes } = require('node:crypto');
 const pool = require('../config/database');
 const { httpError, requiredPositiveInteger } = require('../utils/http');
 
-function makeReference(prefix) {
-  const date = new Date();
-  const stamp = date.toISOString().replace(/\D/g, '').slice(0, 14);
-  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${prefix}-${stamp}-${suffix}`;
+function makeTransactionNumber() {
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  return `TRX-${stamp}-${randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
 async function checkout(req, res) {
   const warehouseId = requiredPositiveInteger(req.body.warehouseId, 'ID gudang');
   const employeeId = requiredPositiveInteger(req.body.employeeId, 'ID karyawan');
   const { paymentMethod, items } = req.body;
+
   if (!['Tunai', 'Debit', 'QRIS'].includes(paymentMethod)) {
     throw httpError(400, 'Metode pembayaran tidak valid.');
   }
@@ -19,54 +19,83 @@ async function checkout(req, res) {
     throw httpError(400, 'Transaksi harus memiliki minimal satu produk.');
   }
 
-  const itemMap = new Map();
+  const quantities = new Map();
   for (const item of items) {
     const productId = requiredPositiveInteger(item.productId, 'ID produk');
     const quantity = requiredPositiveInteger(item.quantity, 'Jumlah beli');
-    itemMap.set(productId, (itemMap.get(productId) || 0) + quantity);
+    quantities.set(productId, (quantities.get(productId) || 0) + quantity);
   }
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const [employees] = await connection.execute(
-      'SELECT id_karyawan FROM karyawan WHERE id_karyawan = ? AND aktif = TRUE FOR UPDATE',
-      [employeeId]
-    );
-    if (!employees.length) throw httpError(400, 'Karyawan tidak ditemukan atau tidak aktif.');
 
-    const productIds = [...itemMap.keys()];
+    const [cashiers] = await connection.execute(
+      'SELECT id_karyawan FROM karyawan WHERE id_karyawan = ? AND jabatan = ? FOR UPDATE',
+      [employeeId, 'Kasir']
+    );
+    if (!cashiers.length) throw httpError(400, 'Karyawan kasir tidak ditemukan.');
+
+    const [warehouses] = await connection.execute(
+      'SELECT id_gudang FROM gudang WHERE id_gudang = ? FOR UPDATE',
+      [warehouseId]
+    );
+    if (!warehouses.length) throw httpError(400, 'Gudang tidak ditemukan.');
+
+    const productIds = [...quantities.keys()].sort((a, b) => a - b);
     const placeholders = productIds.map(() => '?').join(',');
     const [products] = await connection.execute(
-      `SELECT id_produk, harga_jual FROM produk
-        WHERE aktif = TRUE AND id_produk IN (${placeholders}) FOR UPDATE`,
+      `SELECT id_produk, nama_produk, harga_jual
+         FROM produk
+        WHERE aktif = TRUE AND id_produk IN (${placeholders})
+        ORDER BY id_produk
+        FOR UPDATE`,
       productIds
     );
     if (products.length !== productIds.length) {
       throw httpError(400, 'Satu atau lebih produk tidak ditemukan atau tidak aktif.');
     }
 
-    const productsById = new Map(products.map((product) => [product.id_produk, product]));
+    const [stocks] = await connection.execute(
+      `SELECT id_produk, jumlah_stok
+         FROM current_stock
+        WHERE id_gudang = ? AND id_produk IN (${placeholders})
+        ORDER BY id_produk
+        FOR UPDATE`,
+      [warehouseId, ...productIds]
+    );
+    const stockByProduct = new Map(stocks.map((stock) => [stock.id_produk, stock.jumlah_stok]));
+    if (productIds.some((productId) => (stockByProduct.get(productId) ?? -1) < quantities.get(productId))) {
+      throw httpError(400, 'Stok tidak mencukupi');
+    }
+
+    const productById = new Map(products.map((product) => [product.id_produk, product]));
     const lines = productIds.map((productId) => {
-      const product = productsById.get(productId);
-      const quantity = itemMap.get(productId);
+      const product = productById.get(productId);
+      const quantity = quantities.get(productId);
       const unitPrice = Number(product.harga_jual);
-      return { productId, quantity, unitPrice, subtotal: unitPrice * quantity };
+      return {
+        productId,
+        name: product.nama_produk,
+        quantity,
+        unitPrice,
+        subtotal: unitPrice * quantity
+      };
     });
     const total = lines.reduce((sum, line) => sum + line.subtotal, 0);
-    const receiptNumber = makeReference('TRX');
+    const transactionNumber = makeTransactionNumber();
 
     const [sale] = await connection.execute(
       `INSERT INTO penjualan
-        (nomor_struk, id_gudang, id_karyawan, metode_pembayaran, total_penjualan)
+        (no_transaksi, id_karyawan, id_gudang, total_bayar, metode_pembayaran)
        VALUES (?, ?, ?, ?, ?)`,
-      [receiptNumber, warehouseId, employeeId, paymentMethod, total]
+      [transactionNumber, employeeId, warehouseId, total, paymentMethod]
     );
 
     for (const line of lines) {
       await connection.execute(
         `INSERT INTO detail_penjualan
-          (id_penjualan, id_produk, jumlah_jual, harga_jual_satuan, subtotal)
+          (id_penjualan, id_produk, jumlah, harga_satuan, subtotal)
          VALUES (?, ?, ?, ?, ?)`,
         [sale.insertId, line.productId, line.quantity, line.unitPrice, line.subtotal]
       );
@@ -76,7 +105,7 @@ async function checkout(req, res) {
     res.status(201).json({
       data: {
         id: sale.insertId,
-        receiptNumber,
+        receiptNumber: transactionNumber,
         paymentMethod,
         total,
         items: lines
@@ -84,7 +113,9 @@ async function checkout(req, res) {
     });
   } catch (error) {
     await connection.rollback();
-    if (error.sqlState === '45000') throw httpError(409, error.message);
+    if (error.sqlState === '45000' && error.message === 'Stok tidak mencukupi') {
+      throw httpError(400, 'Stok tidak mencukupi');
+    }
     throw error;
   } finally {
     connection.release();

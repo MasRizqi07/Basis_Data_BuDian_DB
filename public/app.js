@@ -3,6 +3,7 @@ const state = {
   products: [],
   suppliers: [],
   stock: [],
+  posStock: [],
   opnameStock: [],
   cart: new Map()
 };
@@ -53,7 +54,7 @@ async function loadReferences() {
 async function loadDashboard() {
   const warehouse = document.querySelector('#warehouse-filter').value;
   const [summary, rows] = await Promise.all([
-    api('/api/stock/summary'),
+    api(`/api/stock/summary${warehouse ? `?warehouseId=${encodeURIComponent(warehouse)}` : ''}`),
     api(`/api/stock${warehouse ? `?warehouseId=${encodeURIComponent(warehouse)}` : ''}`)
   ]);
   state.stock = rows;
@@ -62,6 +63,19 @@ async function loadDashboard() {
   document.querySelector('#kpi-low').textContent = Number(summary.item_menipis).toLocaleString('id-ID');
   document.querySelector('#kpi-empty').textContent = Number(summary.item_habis).toLocaleString('id-ID');
   renderStock();
+}
+
+async function loadPosStock() {
+  const warehouseId = document.querySelector('#pos-warehouse').value;
+  state.posStock = warehouseId
+    ? await api(`/api/stock?warehouseId=${encodeURIComponent(warehouseId)}`)
+    : [];
+  renderPosProducts();
+  renderCart();
+}
+
+function availableStock(productId) {
+  return Number(state.posStock.find((item) => item.id_produk === productId)?.jumlah_stok || 0);
 }
 
 function statusBadge(status) {
@@ -106,7 +120,7 @@ function renderProducts() {
 function renderSuppliers() {
   document.querySelector('#supplier-table').innerHTML = state.suppliers.length ? state.suppliers.map((item) => `
     <tr><td><div class="product-cell"><span class="product-thumb"><i data-lucide="contact"></i></span><b>${escapeHtml(item.nama_supplier)}</b></div></td>
-    <td>${escapeHtml(item.kontak || '—')}</td><td>${escapeHtml(item.email || '—')}</td><td>${escapeHtml(item.alamat || '—')}</td>
+    <td>${escapeHtml(item.no_telepon || '—')}</td><td>${escapeHtml(item.email || '—')}</td><td>${escapeHtml(item.alamat || '—')}</td>
     <td><div class="table-action"><button class="action-button" data-edit-supplier="${item.id_supplier}">Edit</button><button class="action-button" data-delete-supplier="${item.id_supplier}">Hapus</button></div></td></tr>`).join('') : '<tr><td colspan="5" class="empty-state">Belum ada supplier.</td></tr>';
   document.querySelectorAll('[data-edit-supplier]').forEach((button) => button.addEventListener('click', () => openSupplierModal(Number(button.dataset.editSupplier))));
   document.querySelectorAll('[data-delete-supplier]').forEach((button) => button.addEventListener('click', () => deleteSupplier(Number(button.dataset.deleteSupplier))));
@@ -118,7 +132,7 @@ function renderPosProducts() {
   const rows = state.products.filter((item) => item.aktif &&
     (item.nama_produk.toLowerCase().includes(term) || item.kode_barcode.toLowerCase().includes(term)));
   document.querySelector('#pos-product-list').innerHTML = rows.map((item) => `
-    <div class="product-option"><span class="product-thumb"><i data-lucide="package"></i></span><div><b>${escapeHtml(item.nama_produk)}</b><small>${escapeHtml(item.kode_barcode)} · ${escapeHtml(item.satuan)}</small></div><strong>${rupiah(item.harga_jual)}</strong><button class="mini-add" data-add-cart="${item.id_produk}" aria-label="Tambah ${escapeHtml(item.nama_produk)}"><i data-lucide="plus"></i></button></div>`).join('') || '<div class="empty-state">Produk tidak ditemukan.</div>';
+    <div class="product-option"><span class="product-thumb"><i data-lucide="package"></i></span><div><b>${escapeHtml(item.nama_produk)}</b><small>${escapeHtml(item.kode_barcode)} · tersedia ${availableStock(item.id_produk)} ${escapeHtml(item.satuan)}</small></div><strong>${rupiah(item.harga_jual)}</strong><button class="mini-add" data-add-cart="${item.id_produk}" aria-label="Tambah ${escapeHtml(item.nama_produk)}" ${availableStock(item.id_produk) === 0 ? 'disabled' : ''}><i data-lucide="plus"></i></button></div>`).join('') || '<div class="empty-state">Produk tidak ditemukan.</div>';
   document.querySelectorAll('[data-add-cart]').forEach((button) => button.addEventListener('click', () => changeCart(Number(button.dataset.addCart), 1)));
   if (window.lucide) window.lucide.createIcons();
 }
@@ -127,6 +141,7 @@ function changeCart(id, delta) {
   const product = state.products.find((item) => item.id_produk === id);
   if (!product) return;
   const quantity = (state.cart.get(id) || 0) + delta;
+  if (quantity > availableStock(id)) return toast('Stok tidak mencukupi', true);
   if (quantity <= 0) state.cart.delete(id);
   else state.cart.set(id, quantity);
   renderCart();
@@ -137,7 +152,7 @@ function renderCart() {
   document.querySelector('#cart-count').textContent = entries.reduce((sum, entry) => sum + entry[1], 0);
   document.querySelector('#cart-items').innerHTML = entries.length ? entries.map(([id, quantity]) => {
     const item = state.products.find((product) => product.id_produk === id);
-    return `<div class="cart-row"><span class="product-thumb"><i data-lucide="package"></i></span><div><b>${escapeHtml(item.nama_produk)}</b><small>${rupiah(item.harga_jual)} / ${escapeHtml(item.satuan)}</small></div><div class="qty-control"><button data-cart-delta="${id}" data-delta="-1" aria-label="Kurangi">−</button><span>${quantity}</span><button data-cart-delta="${id}" data-delta="1" aria-label="Tambah">+</button></div></div>`;
+    return `<div class="cart-row"><span class="product-thumb"><i data-lucide="package"></i></span><div><b>${escapeHtml(item.nama_produk)}</b><small>${rupiah(item.harga_jual)} / ${escapeHtml(item.satuan)} · stok ${availableStock(id)}</small></div><div class="qty-control"><button data-cart-delta="${id}" data-delta="-1" aria-label="Kurangi">−</button><span>${quantity}</span><button data-cart-delta="${id}" data-delta="1" aria-label="Tambah" ${quantity >= availableStock(id) ? 'disabled' : ''}>+</button></div></div>`;
   }).join('') : '<div class="empty-state">Belum ada produk dipilih.</div>';
   const total = entries.reduce((sum, [id, quantity]) => {
     const item = state.products.find((product) => product.id_produk === id);
@@ -177,14 +192,7 @@ async function loadSuppliers() {
 async function loadPurchases() {
   const rows = await api('/api/purchases');
   document.querySelector('#purchase-table').innerHTML = rows.length ? rows.map((item) => `
-    <tr><td><b>${escapeHtml(item.nomor_po)}</b></td><td>${new Date(item.tanggal_pembelian).toLocaleDateString('id-ID')}</td><td>${escapeHtml(item.nama_supplier)}</td><td>${escapeHtml(item.nama_gudang)}</td><td>${item.jumlah_item} item</td><td>${rupiah(item.total_pembelian)}</td><td>${item.status_pembelian === 'Draft' ? `<button class="action-button" data-receive-po="${item.id_pembelian}">Terima barang</button>` : `<span class="badge safe">${escapeHtml(item.status_pembelian)}</span>`}</td></tr>`).join('') : '<tr><td colspan="7" class="empty-state">Belum ada purchase order.</td></tr>';
-  document.querySelectorAll('[data-receive-po]').forEach((button) => button.addEventListener('click', async () => {
-    try {
-      await api(`/api/purchases/${button.dataset.receivePo}/receive`, { method: 'POST', body: '{}' });
-      toast('PO diterima. Stok gudang sudah diperbarui.');
-      await Promise.all([loadPurchases(), loadDashboard()]);
-    } catch (error) { toast(error.message, true); }
-  }));
+    <tr><td><b>${escapeHtml(item.no_faktur)}</b></td><td>${new Date(item.tanggal_pembelian).toLocaleDateString('id-ID')}</td><td>${escapeHtml(item.nama_supplier)}</td><td>${escapeHtml(item.nama_karyawan)}</td><td>${item.jumlah_item} item</td><td>${rupiah(item.total_harga)}</td><td><span class="badge ${item.status_pembayaran === 'Lunas' ? 'safe' : 'low'}">${escapeHtml(item.status_pembayaran)}</span></td></tr>`).join('') : '<tr><td colspan="7" class="empty-state">Belum ada pembelian.</td></tr>';
 }
 
 async function checkout() {
@@ -202,18 +210,28 @@ async function checkout() {
     });
     state.cart.clear();
     renderCart();
-    await Promise.all([loadDashboard(), loadProducts()]);
+    await Promise.all([loadDashboard(), loadProducts(), loadPosStock(), loadOpnameStock()]);
     showReceipt(receipt);
   } catch (error) { toast(error.message, true); }
 }
 
 function showReceipt(receipt) {
   const details = receipt.items.map((item) => {
-    const product = state.products.find((row) => row.id_produk === item.productId);
-    return `<div style="display:flex;justify-content:space-between;margin:7px 0"><span>${escapeHtml(product?.nama_produk || 'Produk')} × ${item.quantity}</span><b>${rupiah(item.subtotal)}</b></div>`;
+    return `<div style="display:flex;justify-content:space-between;margin:7px 0"><span>${escapeHtml(item.name)} × ${item.quantity}</span><b>${rupiah(item.subtotal)}</b></div>`;
   }).join('');
-  openModal(`<h2>Transaksi berhasil</h2><p style="font-size:10px;color:#8791a5">${escapeHtml(receipt.receiptNumber)} · ${escapeHtml(receipt.paymentMethod)}</p>${details}<hr><div style="display:flex;justify-content:space-between;font-size:12px"><b>Total</b><b>${rupiah(receipt.total)}</b></div><div class="modal-actions"><button class="button button-primary" id="receipt-close">Selesai</button></div>`);
+  openModal(`<h2>Transaksi berhasil</h2><p style="font-size:10px;color:#8791a5">${escapeHtml(receipt.receiptNumber)} · ${escapeHtml(receipt.paymentMethod)}</p>${details}<hr><div style="display:flex;justify-content:space-between;font-size:12px"><b>Total</b><b>${rupiah(receipt.total)}</b></div><div class="modal-actions"><button class="button button-secondary" id="receipt-print">Cetak struk</button><button class="button button-primary" id="receipt-close">Selesai</button></div>`);
   document.querySelector('#receipt-close').addEventListener('click', closeModal);
+  document.querySelector('#receipt-print').addEventListener('click', () => printReceipt(receipt));
+}
+
+function printReceipt(receipt) {
+  const printWindow = window.open('', '_blank', 'width=420,height=640');
+  if (!printWindow) return toast('Izinkan pop-up browser untuk mencetak struk.', true);
+  const rows = receipt.items.map((item) =>
+    `<tr><td>${escapeHtml(item.name)} × ${item.quantity}</td><td>${rupiah(item.subtotal)}</td></tr>`
+  ).join('');
+  printWindow.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Struk ${escapeHtml(receipt.receiptNumber)}</title><style>body{font:14px Arial,sans-serif;max-width:340px;margin:24px auto;color:#222}h1,p{text-align:center}h1{font-size:20px}p{font-size:12px;color:#555}table{width:100%;border-collapse:collapse;margin:18px 0}td{padding:7px 0;border-bottom:1px dashed #bbb}td:last-child{text-align:right;white-space:nowrap}.total{display:flex;justify-content:space-between;font-weight:bold;border-top:1px solid #333;padding-top:12px}</style></head><body><h1>Urban Mart</h1><p>${escapeHtml(receipt.receiptNumber)}<br>${escapeHtml(receipt.paymentMethod)}</p><table>${rows}</table><div class="total"><span>Total</span><span>${rupiah(receipt.total)}</span></div><p>Terima kasih telah berbelanja</p><script>window.onload=()=>window.print()</script></body></html>`);
+  printWindow.document.close();
 }
 
 function openModal(content) {
@@ -230,12 +248,10 @@ function openProductModal(id = null) {
   const item = state.products.find((product) => product.id_produk === id);
   const categories = state.references.categories.map((category) =>
     `<option value="${category.id}" ${item?.id_kategori === category.id ? 'selected' : ''}>${escapeHtml(category.name)}</option>`).join('');
-  const suppliers = state.suppliers.map((supplier) =>
-    `<option value="${supplier.id_supplier}" ${item?.id_supplier_utama === supplier.id_supplier ? 'selected' : ''}>${escapeHtml(supplier.nama_supplier)}</option>`).join('');
   openModal(`<h2>${item ? 'Edit produk' : 'Tambah produk'}</h2><form id="product-form">
     <label>Barcode<input name="barcode" required value="${escapeHtml(item?.kode_barcode || '')}"></label>
     <label>Nama produk<input name="name" required value="${escapeHtml(item?.nama_produk || '')}"></label>
-    <div class="form-row"><label>Kategori<select name="categoryId" required>${categories}</select></label><label>Supplier utama<select name="supplierId"><option value="">Tidak ditentukan</option>${suppliers}</select></label></div>
+    <label>Kategori<select name="categoryId" required>${categories}</select></label>
     <div class="form-row"><label>Harga beli<input name="purchasePrice" type="number" min="0" required value="${item?.harga_beli ?? 0}"></label><label>Harga jual<input name="salePrice" type="number" min="0" required value="${item?.harga_jual ?? ''}"></label></div>
     <div class="form-row"><label>Satuan<input name="unit" required value="${escapeHtml(item?.satuan || 'pcs')}"></label><label>Stok minimum<input name="minimumStock" type="number" min="0" required value="${item?.stok_minimum ?? 5}"></label></div>
     <div class="modal-actions"><button type="button" class="button button-secondary" id="modal-cancel">Batal</button><button class="button button-primary">Simpan produk</button></div></form>`);
@@ -243,10 +259,11 @@ function openProductModal(id = null) {
   document.querySelector('#product-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
-    const payload = { ...values, categoryId: Number(values.categoryId), supplierId: values.supplierId ? Number(values.supplierId) : null, purchasePrice: Number(values.purchasePrice), salePrice: Number(values.salePrice), minimumStock: Number(values.minimumStock), active: item?.aktif ?? true };
+    const payload = { ...values, categoryId: Number(values.categoryId), purchasePrice: Number(values.purchasePrice), salePrice: Number(values.salePrice), minimumStock: Number(values.minimumStock), active: item?.aktif ?? true };
     try {
       await api(item ? `/api/masters/products/${id}` : '/api/masters/products', { method: item ? 'PUT' : 'POST', body: JSON.stringify(payload) });
-      closeModal(); toast('Data produk tersimpan.'); await loadProducts();
+      closeModal(); toast('Data produk tersimpan.');
+      await Promise.all([loadProducts(), loadDashboard(), loadPosStock(), loadOpnameStock()]);
     } catch (error) { toast(error.message, true); }
   });
 }
@@ -255,7 +272,8 @@ async function deactivateProduct(id) {
   if (!confirm('Nonaktifkan produk ini? Riwayat transaksi tetap disimpan.')) return;
   try {
     await api(`/api/masters/products/${id}`, { method: 'DELETE' });
-    toast('Produk dinonaktifkan.'); await loadProducts();
+    toast('Produk dinonaktifkan.');
+    await Promise.all([loadProducts(), loadDashboard(), loadPosStock(), loadOpnameStock()]);
   } catch (error) { toast(error.message, true); }
 }
 
@@ -263,7 +281,8 @@ function openSupplierModal(id = null) {
   const supplier = state.suppliers.find((item) => item.id_supplier === id);
   openModal(`<h2>${supplier ? 'Edit supplier' : 'Tambah supplier'}</h2><form id="supplier-form">
     <label>Nama supplier<input name="name" required value="${escapeHtml(supplier?.nama_supplier || '')}"></label>
-    <label>Kontak<input name="contact" value="${escapeHtml(supplier?.kontak || '')}"></label>
+    <label>Kontak person<input name="contactPerson" value="${escapeHtml(supplier?.kontak_person || '')}"></label>
+    <label>Telepon<input name="phone" value="${escapeHtml(supplier?.no_telepon || '')}"></label>
     <label>Email<input name="email" type="email" value="${escapeHtml(supplier?.email || '')}"></label>
     <label>Alamat<textarea name="address" rows="3">${escapeHtml(supplier?.alamat || '')}</textarea></label>
     <div class="modal-actions"><button type="button" class="button button-secondary" id="modal-cancel">Batal</button><button class="button button-primary">Simpan supplier</button></div></form>`);
@@ -293,14 +312,12 @@ function openPurchaseModal() {
   const supplierOptions = state.suppliers.map((item) => `<option value="${item.id_supplier}">${escapeHtml(item.nama_supplier)}</option>`).join('');
   const productOptions = state.products.filter((item) => item.aktif).map((item) =>
     `<option value="${item.id_produk}">${escapeHtml(item.nama_produk)} — ${rupiah(item.harga_beli)}</option>`).join('');
-  const warehouseOptions = state.references.warehouses.map((item) =>
+  const employeeOptions = state.references.employees.filter((item) => item.jabatan === 'Purchasing').map((item) =>
     `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
-  const employeeOptions = state.references.employees.map((item) =>
-    `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
-  openModal(`<h2>Buat purchase order</h2><form id="purchase-form"><div class="form-row">
+  if (!employeeOptions) return toast('Tambahkan karyawan Purchasing sebelum membuat pembelian.', true);
+  openModal(`<h2>Catat pembelian</h2><form id="purchase-form"><div class="form-row">
     <label>Supplier<select name="supplierId">${supplierOptions}</select></label>
-    <label>Gudang penerimaan<select name="warehouseId">${warehouseOptions}</select></label>
-    <label>Petugas<select name="employeeId">${employeeOptions}</select></label></div>
+    <label>Petugas Purchasing<select name="employeeId">${employeeOptions}</select></label></div>
     <label>Item pembelian</label><div class="purchase-items" id="purchase-items"></div>
     <button type="button" class="text-button" id="add-purchase-item">+ Tambah item</button>
     <div class="modal-actions"><button type="button" class="button button-secondary" id="modal-cancel">Batal</button><button class="button button-primary">Simpan PO</button></div></form>`);
@@ -332,10 +349,10 @@ function openPurchaseModal() {
     }));
     try {
       await api('/api/purchases', { method: 'POST', body: JSON.stringify({
-        supplierId: Number(values.supplierId), warehouseId: Number(values.warehouseId),
+        supplierId: Number(values.supplierId),
         employeeId: Number(values.employeeId), items
       }) });
-      closeModal(); toast('PO berhasil dibuat dengan status Draft.'); await loadPurchases();
+      closeModal(); toast('Pembelian berhasil dicatat.'); await loadPurchases();
     } catch (error) { toast(error.message, true); }
   });
 }
@@ -375,6 +392,11 @@ document.querySelector('#mobile-menu').addEventListener('click', () => document.
 document.querySelector('#refresh-button').addEventListener('click', () => Promise.all([loadDashboard(), loadProducts()]).then(() => toast('Data berhasil dimuat ulang.')).catch((error) => toast(error.message, true)));
 document.querySelector('#stock-refresh').addEventListener('click', () => loadDashboard().catch((error) => toast(error.message, true)));
 document.querySelector('#warehouse-filter').addEventListener('change', () => loadDashboard().catch((error) => toast(error.message, true)));
+document.querySelector('#pos-warehouse').addEventListener('change', () => {
+  state.cart.clear();
+  renderCart();
+  loadPosStock().catch((error) => toast(error.message, true));
+});
 document.querySelector('#opname-warehouse').addEventListener('change', () => loadOpnameStock().catch((error) => toast(error.message, true)));
 document.querySelector('#stock-search').addEventListener('input', renderStock);
 document.querySelector('#pos-search').addEventListener('input', renderPosProducts);
@@ -391,7 +413,7 @@ document.querySelector('#new-purchase').addEventListener('click', openPurchaseMo
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta'
     }).format(new Date()).toLocaleUpperCase('id-ID');
     await loadReferences();
-    await Promise.all([loadDashboard(), loadProducts(), loadSuppliers(), loadOpnameStock()]);
+    await Promise.all([loadDashboard(), loadProducts(), loadSuppliers(), loadOpnameStock(), loadPosStock()]);
     renderCart();
     if (window.lucide) window.lucide.createIcons();
   } catch (error) {

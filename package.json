@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "migrate": "node database/migrate.js"
+    "migrate": "node database/migrate.js",
+    "test": "node --test",
+    "test:integration": "node database/black-box-smoke.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

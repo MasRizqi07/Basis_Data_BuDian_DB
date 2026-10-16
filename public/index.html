@@ -3,92 +3,709 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f5f7fb">
-  <title>Stockwise — Inventory Minimarket</title>
+  <meta name="theme-color" content="#4f46e5">
+  <title>Stockwise — Sistem Manajemen Stock & Inventory Minimarket (14 Tabel 3NF)</title>
+  
+  <!-- Fonts & Icons -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+  <!-- Main Stylesheet -->
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <!-- Sidebar Navigation -->
   <aside class="sidebar">
-    <a class="brand" href="#"><span class="brand-mark"><i data-lucide="boxes"></i></span><span>stockwise<small>INVENTORY SYSTEM</small></span></a>
-    <div class="store-switch"><span class="store-avatar">U</span><span><b>Urban Mart</b><small>Toko Utama</small></span><i data-lucide="chevrons-up-down"></i></div>
-    <p class="nav-label">MENU UTAMA</p>
+    <a class="brand" href="#" title="Stockwise Inventory System">
+      <span class="brand-mark"><i data-lucide="boxes"></i></span>
+      <span>stockwise<small>INVENTORY 3NF</small></span>
+    </a>
+
+    <div class="store-switch">
+      <span class="store-avatar">UM</span>
+      <span>
+        <b>Urban Mart Minimarket</b>
+        <small>Cabang Toko Utama #01</small>
+      </span>
+      <i data-lucide="chevrons-up-down"></i>
+    </div>
+
+    <p class="nav-label">OPERASIONAL UTAMA</p>
     <nav class="main-nav">
-      <button class="nav-link active" data-page="dashboard"><i data-lucide="layout-dashboard"></i>Dashboard</button>
+      <button class="nav-link active" data-page="dashboard"><i data-lucide="layout-dashboard"></i>Dashboard Stok</button>
       <button class="nav-link" data-page="pos"><i data-lucide="shopping-cart"></i>Kasir / POS</button>
-      <button class="nav-link" data-page="purchases"><i data-lucide="truck"></i>Pengadaan <span class="nav-dot"></span></button>
+      <button class="nav-link" data-page="purchases"><i data-lucide="truck"></i>Pengadaan (PO) <span class="nav-dot" title="PO Aktif"></span></button>
       <button class="nav-link" data-page="returns"><i data-lucide="rotate-ccw"></i>Retur Barang</button>
       <button class="nav-link" data-page="opname"><i data-lucide="clipboard-check"></i>Stock Opname</button>
       <button class="nav-link" data-page="reports"><i data-lucide="bar-chart-3"></i>Laporan & Analitik</button>
     </nav>
-    <p class="nav-label nav-gap">MANAJEMEN</p>
+
+    <p class="nav-label nav-gap">MASTER DATA MANAGER</p>
     <nav class="main-nav">
-      <button class="nav-link" data-page="products"><i data-lucide="package"></i>Produk</button>
-      <button class="nav-link" data-page="suppliers"><i data-lucide="contact"></i>Supplier</button>
+      <button class="nav-link" data-page="products"><i data-lucide="package"></i>Master Produk</button>
+      <button class="nav-link" data-page="suppliers"><i data-lucide="contact"></i>Master Supplier</button>
     </nav>
-    <div class="sidebar-bottom"><div class="help-card"><span class="help-icon"><i data-lucide="circle-help"></i></span><b>Butuh bantuan?</b><small>Hubungi administrator sistem.</small></div><div class="user-profile"><span class="profile-avatar">AD</span><span><b>Administrator</b><small>admin@urbanmart.id</small></span><button aria-label="Opsi profil"><i data-lucide="more-horizontal"></i></button></div></div>
+
+    <div class="sidebar-bottom">
+      <div class="help-card">
+        <span class="help-icon"><i data-lucide="database"></i></span>
+        <b>Basis Data Bu Dian</b>
+        <small>14 Tabel 3NF • 2 Database Triggers • ACID Transactions.</small>
+      </div>
+      <div class="user-profile">
+        <span class="profile-avatar">AD</span>
+        <span>
+          <b>Administrator</b>
+          <small>admin@urbanmart.id</small>
+        </span>
+        <button aria-label="Pengaturan profil"><i data-lucide="more-horizontal"></i></button>
+      </div>
+    </div>
   </aside>
 
+  <!-- Main Application Content -->
   <main class="main-content">
-    <header class="topbar"><button class="mobile-menu" id="mobile-menu" aria-label="Buka menu"><i data-lucide="menu"></i></button><div class="breadcrumb">Workspace <i data-lucide="chevron-right"></i> <b id="breadcrumb-current">Dashboard</b></div><div class="top-actions"><span class="live-indicator"><span></span> Sistem aktif</span><button class="icon-button" id="refresh-button" aria-label="Muat ulang"><i data-lucide="refresh-cw"></i></button><button class="icon-button notification" aria-label="Notifikasi"><i data-lucide="bell"></i><span></span></button><span class="top-avatar">AD</span></div></header>
+    <!-- Topbar Header -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="mobile-menu" id="mobile-menu" aria-label="Buka Menu Navigasi"><i data-lucide="menu"></i></button>
+        <div class="breadcrumb">
+          Workspace <i data-lucide="chevron-right"></i> <b id="breadcrumb-current">Dashboard Stok</b>
+        </div>
+      </div>
 
+      <div class="top-actions">
+        <span class="clock-pill" id="live-clock"><i data-lucide="clock"></i> --:--:-- WIB</span>
+        <span class="live-indicator"><span></span> MySQL 8.4 • Active</span>
+        <button class="icon-button" id="refresh-button" title="Muat Ulang Semua Data" aria-label="Muat ulang"><i data-lucide="refresh-cw"></i></button>
+        <button class="icon-button notification" title="Notifikasi Sistem" aria-label="Notifikasi"><i data-lucide="bell"></i><span></span></button>
+        <span class="top-avatar" title="Admin Profil">AD</span>
+      </div>
+    </header>
+
+    <!-- TAB 1: DASHBOARD & MONITORING STOK REAL-TIME -->
     <section class="page active" id="page-dashboard">
-      <div class="page-heading"><div><p class="eyebrow">SENIN, 12 OKTOBER 2026</p><h1>Selamat pagi, Admin <span>✦</span></h1><p class="muted">Berikut ringkasan performa inventory tokomu hari ini.</p></div><button class="button button-primary" data-goto="pos"><i data-lucide="plus"></i> Transaksi baru</button></div>
-      <div class="kpi-grid">
-        <article class="kpi-card"><div class="kpi-top"><span>Total Produk</span><span class="kpi-icon violet"><i data-lucide="package"></i></span></div><div class="kpi-value" id="kpi-products">—</div><div class="kpi-foot"><span class="trend neutral">Terdaftar</span><span class="muted">produk aktif</span></div></article>
-        <article class="kpi-card"><div class="kpi-top"><span>Nilai Persediaan</span><span class="kpi-icon blue"><i data-lucide="wallet"></i></span></div><div class="kpi-value" id="kpi-value">—</div><div class="kpi-foot"><span class="trend neutral">Harga beli</span><span class="muted">nilai estimasi</span></div></article>
-        <article class="kpi-card"><div class="kpi-top"><span>Stok Menipis</span><span class="kpi-icon amber"><i data-lucide="triangle-alert"></i></span></div><div class="kpi-value" id="kpi-low">—</div><div class="kpi-foot"><span class="trend warning">Perlu perhatian</span><span class="muted">item</span></div></article>
-        <article class="kpi-card"><div class="kpi-top"><span>Stok Habis</span><span class="kpi-icon red"><i data-lucide="circle-x"></i></span></div><div class="kpi-value" id="kpi-empty">—</div><div class="kpi-foot"><span class="trend danger">Segera pesan</span><span class="muted">item</span></div></article>
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow" id="dashboard-date-eyebrow">RINGKASAN OPERASIONAL</p>
+          <h1>Monitoring Stok Real-Time <span>✦</span></h1>
+          <p class="muted">Pemantauan snapshot kuantitas barang, estimasi nilai persediaan, dan status ambang batas.</p>
+        </div>
+        <button class="button button-primary" data-goto="pos"><i data-lucide="shopping-cart"></i> Transaksi Kasir Baru</button>
       </div>
-      <div class="content-card stock-card"><div class="card-heading"><div><h2>Ringkasan Stok</h2><p class="muted">Pantau ketersediaan produk di setiap gudang.</p></div><div class="card-actions"><label class="search-field"><i data-lucide="search"></i><input id="stock-search" placeholder="Cari produk..." type="search"></label><select id="warehouse-filter" class="select-control"><option value="">Semua gudang</option></select><button class="icon-button compact" id="stock-refresh" aria-label="Muat ulang stok"><i data-lucide="refresh-cw"></i></button></div></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>BARCODE</th><th>GUDANG</th><th>STOK</th><th>STATUS</th><th>TERAKHIR DIPERBARUI</th></tr></thead><tbody id="stock-table"><tr><td colspan="6" class="empty-state">Memuat data stok...</td></tr></tbody></table></div><div class="table-footer"><span id="stock-count">— produk ditampilkan</span><span>Sinkron otomatis <i data-lucide="refresh-cw"></i></span></div></div>
+
+      <!-- KPI Summary Cards -->
+      <div class="kpi-grid">
+        <article class="kpi-card">
+          <div class="kpi-top">
+            <span>Total Produk Aktif</span>
+            <span class="kpi-icon violet"><i data-lucide="package"></i></span>
+          </div>
+          <div class="kpi-value" id="kpi-products">—</div>
+          <div class="kpi-foot">
+            <span class="trend neutral">Katalog</span>
+            <span class="muted">item aktif terdaftar</span>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="kpi-top">
+            <span>Nilai Persediaan</span>
+            <span class="kpi-icon blue"><i data-lucide="wallet"></i></span>
+          </div>
+          <div class="kpi-value" id="kpi-value">—</div>
+          <div class="kpi-foot">
+            <span class="trend neutral">Harga Beli</span>
+            <span class="muted">valuasi aset fisik</span>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="kpi-top">
+            <span>Stok Menipis</span>
+            <span class="kpi-icon amber"><i data-lucide="triangle-alert"></i></span>
+          </div>
+          <div class="kpi-value" id="kpi-low">—</div>
+          <div class="kpi-foot">
+            <span class="trend warning">Ambang Batas</span>
+            <span class="muted">perlu segera di-PO</span>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="kpi-top">
+            <span>Stok Habis (Kosong)</span>
+            <span class="kpi-icon red"><i data-lucide="circle-x"></i></span>
+          </div>
+          <div class="kpi-value" id="kpi-empty">—</div>
+          <div class="kpi-foot">
+            <span class="trend danger">Kritis</span>
+            <span class="muted">saldo 0 unit</span>
+          </div>
+        </article>
+      </div>
+
+      <!-- Tabel Current Stock -->
+      <div class="content-card">
+        <div class="card-heading">
+          <div>
+            <h2>Snapshot Ketersediaan Persediaan (current_stock)</h2>
+            <p class="muted">Sinkronisasi otomatis real-time melalui database triggers.</p>
+          </div>
+          <div class="card-actions">
+            <label class="search-field">
+              <i data-lucide="search"></i>
+              <input id="stock-search" placeholder="Cari nama atau barcode..." type="search">
+            </label>
+            <select id="warehouse-filter" class="select-control" aria-label="Filter Gudang">
+              <option value="">Semua Lokasi Gudang</option>
+            </select>
+            <button class="icon-button compact" id="stock-refresh" title="Segarkan Data Stok" aria-label="Muat ulang stok">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PRODUK</th>
+                <th>BARCODE</th>
+                <th>LOKASI GUDANG</th>
+                <th>JUMLAH STOK</th>
+                <th>STATUS STOK</th>
+                <th>TERAKHIR DIPERBARUI</th>
+              </tr>
+            </thead>
+            <tbody id="stock-table">
+              <tr><td colspan="6" class="empty-state">Memuat data snapshot stok...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-footer">
+          <span id="stock-count">— produk ditampilkan</span>
+          <span>Sinkron otomatis via DB Trigger <i data-lucide="check-check"></i></span>
+        </div>
+      </div>
     </section>
 
+    <!-- TAB 2: KASIR / POINT OF SALE (POS) -->
     <section class="page" id="page-pos">
-      <div class="page-heading"><div><p class="eyebrow">POINT OF SALE</p><h1>Kasir / POS</h1><p class="muted">Catat penjualan dan perbarui stok secara langsung.</p></div></div>
-      <div class="split-grid"><div class="content-card"><div class="card-heading"><div><h2>Tambah produk</h2><p class="muted">Cari produk berdasarkan nama atau barcode.</p></div></div><label class="search-field wide"><i data-lucide="search"></i><input id="pos-search" placeholder="Ketik nama atau barcode produk..." type="search"></label><div id="pos-product-list" class="product-list"></div></div><div class="content-card"><div class="card-heading"><div><h2>Keranjang</h2><p class="muted"><span id="cart-count">0</span> item dipilih</p></div><button id="clear-cart" class="text-button">Kosongkan</button></div><div id="cart-items" class="cart-items"><div class="empty-state">Belum ada produk dipilih.</div></div><div class="checkout-box"><div class="form-row"><label>Gudang<select id="pos-warehouse" class="select-control"></select></label><label>Kasir<select id="pos-employee" class="select-control"></select></label></div><label>Metode pembayaran<select id="payment-method" class="select-control"><option>Tunai</option><option>Debit</option><option>QRIS</option></select></label><div class="total-row"><span>Total pembayaran</span><strong id="cart-total">Rp0</strong></div><button class="button button-primary full-width" id="checkout-button"><i data-lucide="banknote"></i> Proses pembayaran</button></div></div></div>
-    </section>
-
-    <section class="page" id="page-purchases">
-      <div class="page-heading"><div><p class="eyebrow">SUPPLY CHAIN</p><h1>Pengadaan barang</h1><p class="muted">Buat PO, pantau status, dan terima stok ke gudang.</p></div><button class="button button-primary" id="new-purchase"><i data-lucide="plus"></i> Buat PO</button></div>
-      <div class="content-card"><div class="card-heading"><div><h2>Riwayat pembelian</h2><p class="muted">Catatan faktur dan penerimaan barang supplier.</p></div></div><div class="table-wrap"><table><thead><tr><th>NO. FAKTUR</th><th>TANGGAL</th><th>SUPPLIER</th><th>PETUGAS</th><th>JUMLAH ITEM</th><th>TOTAL</th><th>STATUS PEMBAYARAN</th><th>AKSI</th></tr></thead><tbody id="purchase-table"><tr><td colspan="8" class="empty-state">Memuat riwayat...</td></tr></tbody></table></div></div>
-    </section>
-
-    <section class="page" id="page-returns">
-      <div class="page-heading"><div><p class="eyebrow">PENGEMBALIAN BARANG</p><h1>Retur Barang</h1><p class="muted">Kelola retur barang ke supplier atau retur pengembalian dari pelanggan.</p></div><button class="button button-primary" id="new-return"><i data-lucide="plus"></i> Catat Retur Baru</button></div>
-      <div class="content-card"><div class="card-heading"><div><h2>Riwayat retur</h2><p class="muted">Catatan mutasi retur dan penyesuaian stok.</p></div><div class="card-actions"><select id="return-type-filter" class="select-control"><option value="">Semua jenis retur</option><option value="Ke Supplier">Ke Supplier</option><option value="Dari Pelanggan">Dari Pelanggan</option></select></div></div><div class="table-wrap"><table><thead><tr><th>NO. RETUR</th><th>TANGGAL</th><th>JENIS RETUR</th><th>REFERENSI</th><th>GUDANG</th><th>PETUGAS</th><th>TOTAL NILAI</th><th>STATUS</th></tr></thead><tbody id="return-table"><tr><td colspan="8" class="empty-state">Memuat riwayat retur...</td></tr></tbody></table></div></div>
-    </section>
-
-    <section class="page" id="page-opname">
-      <div class="page-heading"><div><p class="eyebrow">AUDIT PERSEDIAAN</p><h1>Stock opname</h1><p class="muted">Bandingkan stok sistem dengan hasil hitung fisik.</p></div></div>
-      <div class="content-card opname-card"><div class="card-heading"><div><h2>Hitung stok fisik</h2><p class="muted">Input jumlah aktual untuk setiap produk yang diperiksa.</p></div></div><div class="form-row"><label>Gudang<select id="opname-warehouse" class="select-control"></select></label><label>Petugas<select id="opname-employee" class="select-control"></select></label><label>Catatan<input id="opname-notes" class="input-control" placeholder="Opsional"></label></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>STOK SISTEM</th><th>STOK FISIK</th><th>SELISIH</th></tr></thead><tbody id="opname-table"><tr><td colspan="4" class="empty-state">Memuat data stok...</td></tr></tbody></table></div><div class="opname-footer"><span>Hanya baris yang diisi yang akan diproses.</span><button class="button button-primary" id="save-opname"><i data-lucide="check"></i> Simpan hasil opname</button></div></div>
-    </section>
-
-    <section class="page" id="page-reports">
-      <div class="page-heading"><div><p class="eyebrow">ANALISIS & BISNIS</p><h1>Laporan & Analitik</h1><p class="muted">Monitoring kinerja penjualan, produk terlaris, dan kartu mutasi stok komprehensif.</p></div><div class="table-action"><button class="button button-secondary" id="export-sales-csv"><i data-lucide="download"></i> CSV Penjualan</button><button class="button button-secondary" id="export-movement-csv"><i data-lucide="download"></i> CSV Mutasi Stok</button><button class="button button-primary" id="print-reports"><i data-lucide="printer"></i> Cetak Laporan</button></div></div>
-      <div class="kpi-grid">
-        <article class="kpi-card"><div class="kpi-top"><span>Total Omzet</span><span class="kpi-icon blue"><i data-lucide="wallet"></i></span></div><div class="kpi-value" id="rep-omzet">—</div><div class="kpi-foot"><span class="trend neutral">Akumulasi</span><span class="muted">penjualan kasir</span></div></article>
-        <article class="kpi-card"><div class="kpi-top"><span>Total Transaksi</span><span class="kpi-icon violet"><i data-lucide="shopping-bag"></i></span></div><div class="kpi-value" id="rep-transaksi">—</div><div class="kpi-foot"><span class="trend neutral">Struk belanja</span><span class="muted">berhasil dibayar</span></div></article>
-        <article class="kpi-card"><div class="kpi-top"><span>Rata-Rata Keranjang</span><span class="kpi-icon amber"><i data-lucide="receipt"></i></span></div><div class="kpi-value" id="rep-avg">—</div><div class="kpi-foot"><span class="trend warning">Rata-rata</span><span class="muted">per transaksi</span></div></article>
-        <article class="kpi-card"><div class="kpi-top"><span>Produk Terlaris</span><span class="kpi-icon green"><i data-lucide="flame"></i></span></div><div class="kpi-value" id="rep-top-product" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div><div class="kpi-foot"><span class="trend neutral">Fast Moving</span><span class="muted">kuantitas tertinggi</span></div></article>
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">POINT OF SALE (POS)</p>
+          <h1>Terminal Kasir & Checkout</h1>
+          <p class="muted">Scan barcode / pilih produk, kelola keranjang belanja, kalkulasi kembalian, dan cetak struk.</p>
+        </div>
       </div>
-      <div class="content-card stock-card"><div class="card-heading"><div><h2>Produk Fast Moving (Terlaris)</h2><p class="muted">10 produk dengan volume penjualan tertinggi.</p></div></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>BARCODE</th><th>KATEGORI</th><th>TOTAL TERJUAL</th><th>TOTAL PENDAPATAN</th></tr></thead><tbody id="fast-moving-table"><tr><td colspan="5" class="empty-state">Memuat data produk terlaris...</td></tr></tbody></table></div></div>
-      <div class="content-card"><div class="card-heading"><div><h2>Kartu Mutasi Stok Komprehensif (Stock Movement Audit)</h2><p class="muted">Pelacakan stok masuk (pengadaan/retur pelanggan) dan keluar (kasir/retur supplier).</p></div><div class="card-actions"><select id="movement-warehouse-filter" class="select-control"><option value="">Semua gudang</option></select></div></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>GUDANG</th><th>STOK SAAT INI</th><th>MASUK (PO DITERIMA)</th><th>MASUK (RETUR CUST)</th><th>KELUAR (KASIR POS)</th><th>KELUAR (RETUR SUPP)</th><th>PENYESUAIAN OPNAME</th><th>STATUS</th></tr></thead><tbody id="stock-movement-table"><tr><td colspan="9" class="empty-state">Memuat mutasi stok...</td></tr></tbody></table></div></div>
+
+      <div class="split-grid">
+        <!-- Katalog Produk Kasir -->
+        <div class="content-card">
+          <div class="card-heading">
+            <div>
+              <h2>Katalog Produk</h2>
+              <p class="muted">Tekan <b>Enter</b> setelah mengetik/scan barcode untuk langsung menambahkan ke keranjang.</p>
+            </div>
+          </div>
+
+          <!-- Barcode & Search Input -->
+          <label class="search-field wide">
+            <i data-lucide="barcode"></i>
+            <input id="pos-search" placeholder="Scan barcode atau cari nama produk... [Enter untuk tambah]" type="search" autocomplete="off">
+          </label>
+
+          <!-- Category Chips Filter -->
+          <div class="category-chips" id="pos-category-chips">
+            <button class="chip active" data-category="">Semua Kategori</button>
+            <button class="chip" data-category="Makanan">Makanan</button>
+            <button class="chip" data-category="Minuman">Minuman</button>
+            <button class="chip" data-category="Kebutuhan Rumah">Kebutuhan Rumah</button>
+          </div>
+
+          <!-- Product Options List -->
+          <div id="pos-product-list" class="product-list">
+            <div class="empty-state">Memuat katalog kasir...</div>
+          </div>
+        </div>
+
+        <!-- Keranjang & Checkout -->
+        <div class="content-card">
+          <div class="card-heading">
+            <div>
+              <h2>Keranjang Belanja</h2>
+              <p class="muted"><span id="cart-count">0</span> item dipilih</p>
+            </div>
+            <button id="clear-cart" class="text-button" title="Kosongkan Keranjang">Kosongkan</button>
+          </div>
+
+          <!-- Cart Item Rows -->
+          <div id="cart-items" class="cart-items">
+            <div class="empty-state">Belum ada item dalam keranjang.</div>
+          </div>
+
+          <!-- Checkout Box & Payment Calculator -->
+          <div class="checkout-box">
+            <div class="form-row">
+              <label>
+                Lokasi Gudang Penjualan
+                <select id="pos-warehouse" class="select-control"></select>
+              </label>
+              <label>
+                Kasir Bertugas
+                <select id="pos-employee" class="select-control"></select>
+              </label>
+            </div>
+
+            <label>
+              Metode Pembayaran
+              <select id="payment-method" class="select-control">
+                <option value="Tunai">Tunai (Cash)</option>
+                <option value="QRIS">QRIS (Gopay/OVO/ShopeePay)</option>
+                <option value="Debit">Kartu Debit / EDC</option>
+              </select>
+            </label>
+
+            <!-- Quick Cash Calculation Container -->
+            <div class="quick-cash-box" id="pos-cash-calculator">
+              <div class="quick-cash-label">
+                <span>Kalkulator Uang Tunai</span>
+                <span class="muted">Pilih pecahan cepat:</span>
+              </div>
+              <div class="quick-cash-buttons">
+                <button type="button" class="cash-chip cash-exact" id="cash-exact-btn">Uang Pas</button>
+                <button type="button" class="cash-chip" data-cash="10000">10rb</button>
+                <button type="button" class="cash-chip" data-cash="20000">20rb</button>
+                <button type="button" class="cash-chip" data-cash="50000">50rb</button>
+                <button type="button" class="cash-chip" data-cash="100000">100rb</button>
+                <button type="button" class="cash-chip" data-cash="200000">200rb</button>
+              </div>
+              <input type="number" id="pos-cash-input" class="input-control" placeholder="Nominal uang diterima dari pembeli..." min="0" step="500" style="width:100%">
+              <div class="change-display exact" id="pos-change-display">
+                <span>Status Kembalian</span>
+                <strong id="pos-change-value">Rp0</strong>
+              </div>
+            </div>
+
+            <!-- Total Order Display -->
+            <div class="total-row">
+              <span>Total Tagihan Belanja</span>
+              <strong id="cart-total">Rp0</strong>
+            </div>
+
+            <button class="button button-primary full-width" id="checkout-button">
+              <i data-lucide="receipt"></i> Proses Pembayaran & Cetak Struk
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
 
+    <!-- TAB 3: PENGADAAN BARANG (PURCHASE ORDER & GOODS RECEIPT) -->
+    <section class="page" id="page-purchases">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">SUPPLY CHAIN & PENGADAAN</p>
+          <h1>Pengadaan Barang & Penerimaan PO</h1>
+          <p class="muted">Buat Purchase Order (PO) ke supplier, kelola faktur, dan lakukan konfirmasi penerimaan barang.</p>
+        </div>
+        <button class="button button-primary" id="new-purchase"><i data-lucide="plus"></i> Buat PO Pengadaan Baru</button>
+      </div>
+
+      <div class="content-card">
+        <div class="card-heading">
+          <div>
+            <h2>Riwayat Faktur Pengadaan (pembelian & detail_pembelian)</h2>
+            <p class="muted">Barang dengan status "Diterima" otomatis menambah saldo stok gudang.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>NO. FAKTUR</th>
+                <th>TANGGAL PO</th>
+                <th>SUPPLIER</th>
+                <th>STAF PURCHASING</th>
+                <th>JUMLAH ITEM</th>
+                <th>TOTAL HARGA</th>
+                <th>STATUS PO</th>
+                <th>AKSI PENERIMAAN</th>
+              </tr>
+            </thead>
+            <tbody id="purchase-table">
+              <tr><td colspan="8" class="empty-state">Memuat riwayat faktur...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: RETUR BARANG -->
+    <section class="page" id="page-returns">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">REVERSE LOGISTICS</p>
+          <h1>Retur Barang (Supplier & Pelanggan)</h1>
+          <p class="muted">Catat pengembalian barang rusak ke supplier (stok keluar) atau barang retur dari pelanggan (stok masuk).</p>
+        </div>
+        <button class="button button-primary" id="new-return"><i data-lucide="plus"></i> Catat Transaksi Retur</button>
+      </div>
+
+      <div class="content-card">
+        <div class="card-heading">
+          <div>
+            <h2>Riwayat Mutasi Retur (retur & detail_retur)</h2>
+            <p class="muted">Setiap mutasi retur diverifikasi dengan transaksi asal dan alasan spesifik.</p>
+          </div>
+          <div class="card-actions">
+            <select id="return-type-filter" class="select-control" aria-label="Filter Jenis Retur">
+              <option value="">Semua Jenis Retur</option>
+              <option value="Ke Supplier">Ke Supplier (Barang Rusak/Expired)</option>
+              <option value="Dari Pelanggan">Dari Pelanggan (Barang Dikembalikan)</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>NO. RETUR</th>
+                <th>TANGGAL</th>
+                <th>JENIS RETUR</th>
+                <th>DOKUMEN REFERENSI</th>
+                <th>GUDANG</th>
+                <th>PENANGGUNG JAWAB</th>
+                <th>TOTAL NILAI RETUR</th>
+                <th>STATUS</th>
+              </tr>
+            </thead>
+            <tbody id="return-table">
+              <tr><td colspan="8" class="empty-state">Memuat riwayat transaksi retur...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: STOCK OPNAME (AUDIT FISIK) -->
+    <section class="page" id="page-opname">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">AUDIT & KONSISTENSI FISIK</p>
+          <h1>Stock Opname (Audit Persediaan)</h1>
+          <p class="muted">Rekonsiliasi saldo buku sistem dengan stok fisik riil di rak untuk menjamin akurasi mutasi.</p>
+        </div>
+      </div>
+
+      <div class="content-card opname-card">
+        <div class="card-heading">
+          <div>
+            <h2>Formulir Hitung Fisik Barang</h2>
+            <p class="muted">Pilih lokasi gudang, masukkan kuantitas fisik, dan sistem akan mengalkulasi selisih secara otomatis.</p>
+          </div>
+          <div class="card-actions">
+            <button class="button button-secondary" id="opname-prefill" title="Isi otomatis semua nilai fisik sama dengan sistem untuk audit cepat">
+              <i data-lucide="sparkles"></i> Auto-isi Sesuai Sistem
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>
+            Gudang yang Diaudit
+            <select id="opname-warehouse" class="select-control"></select>
+          </label>
+          <label>
+            Auditor / Petugas
+            <select id="opname-employee" class="select-control"></select>
+          </label>
+          <label>
+            Catatan Tambahan
+            <input id="opname-notes" class="input-control" placeholder="Contoh: Audit fisik rak mingguan toko depan">
+          </label>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PRODUK & BARCODE</th>
+                <th>STOK SISTEM</th>
+                <th>INPUT STOK FISIK RIIL</th>
+                <th>SELISIH AUDIT</th>
+              </tr>
+            </thead>
+            <tbody id="opname-table">
+              <tr><td colspan="4" class="empty-state">Pilih gudang untuk memuat item opname...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="opname-footer">
+          <span>* Hanya baris yang diisi fisik yang akan disinkronkan ke saldo <code>current_stock</code> melalui trigger database.</span>
+          <button class="button button-primary" id="save-opname"><i data-lucide="check"></i> Simpan Hasil Opname & Sinkronisasi</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: LAPORAN & ANALITIK (CHART.JS VISUALIZATION) -->
+    <section class="page" id="page-reports">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">INTELIJEN BISNIS & AUDIT</p>
+          <h1>Laporan & Analitik Komprehensif</h1>
+          <p class="muted">Visualisasi tren penjualan harian, sebaran metode pembayaran, produk terlaris, dan kartu mutasi stok.</p>
+        </div>
+        <div class="table-action">
+          <button class="button button-secondary" id="export-sales-csv" title="Unduh CSV Penjualan"><i data-lucide="download"></i> CSV Penjualan</button>
+          <button class="button button-secondary" id="export-movement-csv" title="Unduh CSV Kartu Mutasi Stok"><i data-lucide="download"></i> CSV Mutasi Stok</button>
+          <button class="button button-primary" id="print-reports" title="Cetak Seluruh Halaman Laporan"><i data-lucide="printer"></i> Cetak Laporan</button>
+        </div>
+      </div>
+
+      <!-- Financial KPI Cards -->
+      <div class="kpi-grid">
+        <article class="kpi-card">
+          <div class="kpi-top">
+            <span>Total Omzet Penjualan</span>
+            <span class="kpi-icon blue"><i data-lucide="wallet"></i></span>
+          </div>
+          <div class="kpi-value" id="rep-omzet">—</div>
+          <div class="kpi-foot">
+            <span class="trend safe">Gross Sales</span>
+            <span class="muted">akumulasi seluruh kasir</span>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="kpi-top">
+            <span>Total Transaksi POS</span>
+            <span class="kpi-icon violet"><i data-lucide="shopping-bag"></i></span>
+          </div>
+          <div class="kpi-value" id="rep-transaksi">—</div>
+          <div class="kpi-foot">
+            <span class="trend neutral">Struk</span>
+            <span class="muted">berhasil diselesaikan</span>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="kpi-top">
+            <span>Rata-Rata Keranjang (AOV)</span>
+            <span class="kpi-icon amber"><i data-lucide="receipt"></i></span>
+          </div>
+          <div class="kpi-value" id="rep-avg">—</div>
+          <div class="kpi-foot">
+            <span class="trend warning">Basket Size</span>
+            <span class="muted">nilai belanja per struk</span>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="kpi-top">
+            <span>Produk Terlaris</span>
+            <span class="kpi-icon green"><i data-lucide="flame"></i></span>
+          </div>
+          <div class="kpi-value" id="rep-top-product" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
+          <div class="kpi-foot">
+            <span class="trend safe">Fast Moving</span>
+            <span class="muted">volume tertinggi</span>
+          </div>
+        </article>
+      </div>
+
+      <!-- Visual Charts Grid (Chart.js) -->
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-card-heading">
+            <div>
+              <h3>Tren Omzet & Penjualan Harian</h3>
+              <p>Performa fluktuasi pendapatan harian minimarket.</p>
+            </div>
+            <span class="badge safe">Grafik Garis</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="sales-trend-chart"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-card-heading">
+            <div>
+              <h3>Proporsi Metode Pembayaran</h3>
+              <p>Distribusi preferensi transaksi (Tunai vs QRIS vs Debit).</p>
+            </div>
+            <span class="badge neutral">Donat Chart</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="payment-chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Fast Moving Products Table -->
+      <div class="content-card">
+        <div class="card-heading">
+          <div>
+            <h2>Top 10 Produk Fast Moving (Penjualan Tertinggi)</h2>
+            <p class="muted">Peringkat produk dengan perputaran stok tercepat dan kontribusi omzet terbesar.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>RANK</th>
+                <th>PRODUK</th>
+                <th>BARCODE</th>
+                <th>KATEGORI</th>
+                <th>VOLUME TERJUAL</th>
+                <th>TOTAL KONTRIBUSI OMZET</th>
+              </tr>
+            </thead>
+            <tbody id="fast-moving-table">
+              <tr><td colspan="6" class="empty-state">Memuat data produk fast moving...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Kartu Mutasi Stok Komprehensif -->
+      <div class="content-card">
+        <div class="card-heading">
+          <div>
+            <h2>Kartu Mutasi Stok Komprehensif (Stock Movement Audit)</h2>
+            <p class="muted">Audit alur masuk (PO/Retur Pelanggan), keluar (Kasir POS/Retur Supplier), dan selisih opname.</p>
+          </div>
+          <div class="card-actions">
+            <select id="movement-warehouse-filter" class="select-control" aria-label="Filter Gudang Mutasi">
+              <option value="">Semua Gudang</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PRODUK</th>
+                <th>LOKASI GUDANG</th>
+                <th>SALDO STOK</th>
+                <th>MASUK (PO DITERIMA)</th>
+                <th>MASUK (RETUR CUST)</th>
+                <th>KELUAR (KASIR POS)</th>
+                <th>KELUAR (RETUR SUPP)</th>
+                <th>PENYESUAIAN OPNAME</th>
+                <th>STATUS STOK</th>
+              </tr>
+            </thead>
+            <tbody id="stock-movement-table">
+              <tr><td colspan="9" class="empty-state">Memuat matriks kartu mutasi persediaan...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 7: MASTER PRODUK -->
     <section class="page" id="page-products">
-      <div class="page-heading"><div><p class="eyebrow">KATALOG</p><h1>Produk</h1><p class="muted">Kelola produk, harga, dan ambang stok minimum.</p></div><button class="button button-primary" id="new-product"><i data-lucide="plus"></i> Tambah produk</button></div>
-      <div class="content-card"><div class="card-heading"><div><h2>Daftar produk</h2><p class="muted">Informasi master produk yang aktif.</p></div></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>BARCODE</th><th>KATEGORI</th><th>HARGA BELI</th><th>HARGA JUAL</th><th>AKSI</th></tr></thead><tbody id="product-table"><tr><td colspan="6" class="empty-state">Memuat produk...</td></tr></tbody></table></div></div>
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">KATALOG BARANG</p>
+          <h1>Master Data Produk</h1>
+          <p class="muted">Kelola barcode EAN-13, nama barang, klasifikasi kategori, harga pokok, harga jual, dan stok minimum.</p>
+        </div>
+        <button class="button button-primary" id="new-product"><i data-lucide="plus"></i> Tambah Produk Baru</button>
+      </div>
+
+      <div class="content-card">
+        <div class="card-heading">
+          <div>
+            <h2>Daftar Produk Aktif (produk & kategori)</h2>
+            <p class="muted">Setiap produk baru otomatis membuat entitas snapshot <code>current_stock</code> di semua gudang.</p>
+          </div>
+          <div class="card-actions">
+            <label class="search-field">
+              <i data-lucide="search"></i>
+              <input id="product-master-search" placeholder="Cari nama atau barcode..." type="search">
+            </label>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PRODUK</th>
+                <th>BARCODE EAN-13</th>
+                <th>KATEGORI</th>
+                <th>HARGA BELI</th>
+                <th>HARGA JUAL</th>
+                <th>AMBANG MINIMUM</th>
+                <th>AKSI</th>
+              </tr>
+            </thead>
+            <tbody id="product-table">
+              <tr><td colspan="7" class="empty-state">Memuat katalog master produk...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
+    <!-- TAB 8: MASTER SUPPLIER -->
     <section class="page" id="page-suppliers">
-      <div class="page-heading"><div><p class="eyebrow">MITRA BISNIS</p><h1>Supplier</h1><p class="muted">Kelola informasi pemasok barang minimarket.</p></div><button class="button button-primary" id="new-supplier"><i data-lucide="plus"></i> Tambah supplier</button></div>
-      <div class="content-card"><div class="card-heading"><div><h2>Daftar supplier</h2><p class="muted">Data kontak supplier terdaftar.</p></div></div><div class="table-wrap"><table><thead><tr><th>NAMA SUPPLIER</th><th>KONTAK</th><th>EMAIL</th><th>ALAMAT</th><th>AKSI</th></tr></thead><tbody id="supplier-table"><tr><td colspan="5" class="empty-state">Memuat supplier...</td></tr></tbody></table></div></div>
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">MITRA PEMASOK</p>
+          <h1>Master Data Supplier</h1>
+          <p class="muted">Kelola data mitra prinsipal, distributor resmi pengadaan barang minimarket, dan kontak narahubung.</p>
+        </div>
+        <button class="button button-primary" id="new-supplier"><i data-lucide="plus"></i> Tambah Supplier Baru</button>
+      </div>
+
+      <div class="content-card">
+        <div class="card-heading">
+          <div>
+            <h2>Daftar Supplier Resmi (supplier)</h2>
+            <p class="muted">Digunakan sebagai referensi penerbitan Purchase Order (PO).</p>
+          </div>
+          <div class="card-actions">
+            <label class="search-field">
+              <i data-lucide="search"></i>
+              <input id="supplier-master-search" placeholder="Cari nama supplier..." type="search">
+            </label>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>NAMA PERUSAHAAN</th>
+                <th>NARAHUBUNG (PIC)</th>
+                <th>NO. TELEPON</th>
+                <th>EMAIL RESMI</th>
+                <th>ALAMAT KANTOR</th>
+                <th>AKSI</th>
+              </tr>
+            </thead>
+            <tbody id="supplier-table">
+              <tr><td colspan="6" class="empty-state">Memuat master supplier...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
-    <div id="toast" class="toast" role="status"></div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </main>
+
+  <!-- Application Logic JavaScript -->
   <script src="/app.js"></script>
 </body>
 </html>

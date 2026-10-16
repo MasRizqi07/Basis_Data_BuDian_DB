@@ -456,3 +456,48 @@ UPDATE jumlah_stok = VALUES(jumlah_stok),
     WHEN current_stock.jumlah_stok <= VALUES(stok_minimum) THEN 'Menipis'
     ELSE 'Aman'
   END;
+INSERT IGNORE INTO pembelian (id_pembelian, no_faktur, id_supplier, id_karyawan, tanggal_pembelian, total_harga, status_pembayaran)
+VALUES
+  (1, 'PO-20261005-001', 1, 3, '2026-10-05 09:00:00', 144000.00, 'Diterima'),
+  (2, 'PO-20261008-002', 2, 3, '2026-10-08 11:30:00', 265000.00, 'Diterima'),
+  (3, 'PO-20261012-003', 1, 3, '2026-10-12 14:15:00', 170000.00, 'Belum Lunas');
+INSERT IGNORE INTO detail_pembelian (id_detail_beli, id_pembelian, id_produk, jumlah, harga_satuan, subtotal)
+VALUES
+  (1, 1, 1, 40, 2500.00, 100000.00),
+  (2, 1, 2, 20, 2200.00, 44000.00),
+  (3, 2, 4, 20, 6000.00, 120000.00),
+  (4, 2, 5, 10, 14500.00, 145000.00),
+  (5, 3, 3, 20, 8500.00, 170000.00);
+INSERT IGNORE INTO penjualan (id_penjualan, no_transaksi, id_karyawan, id_gudang, tanggal_penjualan, total_bayar, metode_pembayaran)
+VALUES
+  (1, 'TRX-20261009-001', 1, 1, '2026-10-09 10:15:00', 10500.00, 'Tunai'),
+  (2, 'TRX-20261010-002', 1, 1, '2026-10-10 13:45:00', 26500.00, 'QRIS'),
+  (3, 'TRX-20261011-003', 1, 1, '2026-10-11 16:20:00', 17500.00, 'Debit'),
+  (4, 'TRX-20261012-004', 1, 1, '2026-10-12 18:30:00', 20500.00, 'QRIS'),
+  (5, 'TRX-20261013-005', 1, 1, '2026-10-13 19:10:00', 32000.00, 'Tunai');
+INSERT IGNORE INTO detail_penjualan (id_detail_jual, id_penjualan, id_produk, jumlah, harga_satuan, subtotal)
+VALUES
+  (1, 1, 1, 2, 3500.00, 7000.00),
+  (2, 1, 2, 1, 3500.00, 3500.00),
+  (3, 2, 4, 1, 8500.00, 8500.00),
+  (4, 2, 5, 1, 18000.00, 18000.00),
+  (5, 3, 1, 3, 3500.00, 10500.00),
+  (6, 3, 2, 2, 3500.00, 7000.00),
+  (7, 4, 4, 2, 8500.00, 17000.00),
+  (8, 4, 2, 1, 3500.00, 3500.00),
+  (9, 5, 1, 4, 3500.00, 14000.00),
+  (10, 5, 5, 1, 18000.00, 18000.00);
+INSERT IGNORE INTO retur (id_retur, no_retur, id_pembelian, id_penjualan, id_karyawan, id_gudang, tanggal_retur, jenis_retur, total_nilai_retur, status_retur)
+VALUES
+  (1, 'RET-20261010-001', 1, NULL, 3, 1, '2026-10-10 15:00:00', 'Ke Supplier', 5000.00, 'Selesai'),
+  (2, 'RET-20261011-002', NULL, 1, 1, 1, '2026-10-11 17:30:00', 'Dari Pelanggan', 3500.00, 'Selesai');
+INSERT IGNORE INTO detail_retur (id_detail_retur, id_retur, id_produk, jumlah_retur, harga_satuan, subtotal, alasan)
+VALUES
+  (1, 1, 1, 2, 2500.00, 5000.00, 'Rusak'),
+  (2, 2, 2, 1, 3500.00, 3500.00, 'Tidak Sesuai');
+INSERT IGNORE INTO stock_opname (id_opname, no_opname, id_gudang, id_karyawan, tanggal_opname, status_opname, keterangan)
+VALUES
+  (1, 'OPN-20261007-001', 1, 2, '2026-10-07 08:00:00', 'Selesai', 'Audit rutin mingguan Toko Utama');
+INSERT IGNORE INTO detail_stock_opname (id_detail_opname, id_opname, id_produk, stok_sistem, stok_fisik, selisih, jenis_penyesuaian, keterangan)
+VALUES
+  (1, 1, 1, 50, 50, 0, 'Tetap', 'Sesuai fisik rak');

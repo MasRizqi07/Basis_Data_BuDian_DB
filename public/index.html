@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>Stockwise — Inventory Minimarket</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#"><span class="brand-mark"><i data-lucide="boxes"></i></span><span>stockwise<small>INVENTORY SYSTEM</small></span></a>
+    <div class="store-switch"><span class="store-avatar">U</span><span><b>Urban Mart</b><small>Toko Utama</small></span><i data-lucide="chevrons-up-down"></i></div>
+    <p class="nav-label">MENU UTAMA</p>
+    <nav class="main-nav">
+      <button class="nav-link active" data-page="dashboard"><i data-lucide="layout-dashboard"></i>Dashboard</button>
+      <button class="nav-link" data-page="pos"><i data-lucide="shopping-cart"></i>Kasir / POS</button>
+      <button class="nav-link" data-page="purchases"><i data-lucide="truck"></i>Pengadaan <span class="nav-dot"></span></button>
+      <button class="nav-link" data-page="opname"><i data-lucide="clipboard-check"></i>Stock Opname</button>
+    </nav>
+    <p class="nav-label nav-gap">MANAJEMEN</p>
+    <nav class="main-nav">
+      <button class="nav-link" data-page="products"><i data-lucide="package"></i>Produk</button>
+      <button class="nav-link" data-page="suppliers"><i data-lucide="contact"></i>Supplier</button>
+    </nav>
+    <div class="sidebar-bottom"><div class="help-card"><span class="help-icon"><i data-lucide="circle-help"></i></span><b>Butuh bantuan?</b><small>Hubungi administrator sistem.</small></div><div class="user-profile"><span class="profile-avatar">AD</span><span><b>Administrator</b><small>admin@urbanmart.id</small></span><button aria-label="Opsi profil"><i data-lucide="more-horizontal"></i></button></div></div>
+  </aside>
+
+  <main class="main-content">
+    <header class="topbar"><button class="mobile-menu" id="mobile-menu" aria-label="Buka menu"><i data-lucide="menu"></i></button><div class="breadcrumb">Workspace <i data-lucide="chevron-right"></i> <b id="breadcrumb-current">Dashboard</b></div><div class="top-actions"><span class="live-indicator"><span></span> Sistem aktif</span><button class="icon-button" id="refresh-button" aria-label="Muat ulang"><i data-lucide="refresh-cw"></i></button><button class="icon-button notification" aria-label="Notifikasi"><i data-lucide="bell"></i><span></span></button><span class="top-avatar">AD</span></div></header>
+
+    <section class="page active" id="page-dashboard">
+      <div class="page-heading"><div><p class="eyebrow">SENIN, 12 OKTOBER 2026</p><h1>Selamat pagi, Admin <span>✦</span></h1><p class="muted">Berikut ringkasan performa inventory tokomu hari ini.</p></div><button class="button button-primary" data-goto="pos"><i data-lucide="plus"></i> Transaksi baru</button></div>
+      <div class="kpi-grid">
+        <article class="kpi-card"><div class="kpi-top"><span>Total Produk</span><span class="kpi-icon violet"><i data-lucide="package"></i></span></div><div class="kpi-value" id="kpi-products">—</div><div class="kpi-foot"><span class="trend neutral">Terdaftar</span><span class="muted">produk aktif</span></div></article>
+        <article class="kpi-card"><div class="kpi-top"><span>Nilai Persediaan</span><span class="kpi-icon blue"><i data-lucide="wallet"></i></span></div><div class="kpi-value" id="kpi-value">—</div><div class="kpi-foot"><span class="trend neutral">Harga beli</span><span class="muted">nilai estimasi</span></div></article>
+        <article class="kpi-card"><div class="kpi-top"><span>Stok Menipis</span><span class="kpi-icon amber"><i data-lucide="triangle-alert"></i></span></div><div class="kpi-value" id="kpi-low">—</div><div class="kpi-foot"><span class="trend warning">Perlu perhatian</span><span class="muted">item</span></div></article>
+        <article class="kpi-card"><div class="kpi-top"><span>Stok Habis</span><span class="kpi-icon red"><i data-lucide="circle-x"></i></span></div><div class="kpi-value" id="kpi-empty">—</div><div class="kpi-foot"><span class="trend danger">Segera pesan</span><span class="muted">item</span></div></article>
+      </div>
+      <div class="content-card stock-card"><div class="card-heading"><div><h2>Ringkasan Stok</h2><p class="muted">Pantau ketersediaan produk di setiap gudang.</p></div><div class="card-actions"><label class="search-field"><i data-lucide="search"></i><input id="stock-search" placeholder="Cari produk..." type="search"></label><select id="warehouse-filter" class="select-control"><option value="">Semua gudang</option></select><button class="icon-button compact" id="stock-refresh" aria-label="Muat ulang stok"><i data-lucide="refresh-cw"></i></button></div></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>BARCODE</th><th>GUDANG</th><th>STOK</th><th>STATUS</th><th>TERAKHIR DIPERBARUI</th></tr></thead><tbody id="stock-table"><tr><td colspan="6" class="empty-state">Memuat data stok...</td></tr></tbody></table></div><div class="table-footer"><span id="stock-count">— produk ditampilkan</span><span>Sinkron otomatis <i data-lucide="refresh-cw"></i></span></div></div>
+    </section>
+
+    <section class="page" id="page-pos">
+      <div class="page-heading"><div><p class="eyebrow">POINT OF SALE</p><h1>Kasir / POS</h1><p class="muted">Catat penjualan dan perbarui stok secara langsung.</p></div></div>
+      <div class="split-grid"><div class="content-card"><div class="card-heading"><div><h2>Tambah produk</h2><p class="muted">Cari produk berdasarkan nama atau barcode.</p></div></div><label class="search-field wide"><i data-lucide="search"></i><input id="pos-search" placeholder="Ketik nama atau barcode produk..." type="search"></label><div id="pos-product-list" class="product-list"></div></div><div class="content-card"><div class="card-heading"><div><h2>Keranjang</h2><p class="muted"><span id="cart-count">0</span> item dipilih</p></div><button id="clear-cart" class="text-button">Kosongkan</button></div><div id="cart-items" class="cart-items"><div class="empty-state">Belum ada produk dipilih.</div></div><div class="checkout-box"><div class="form-row"><label>Gudang<select id="pos-warehouse" class="select-control"></select></label><label>Kasir<select id="pos-employee" class="select-control"></select></label></div><label>Metode pembayaran<select id="payment-method" class="select-control"><option>Tunai</option><option>Debit</option><option>QRIS</option></select></label><div class="total-row"><span>Total pembayaran</span><strong id="cart-total">Rp0</strong></div><button class="button button-primary full-width" id="checkout-button"><i data-lucide="banknote"></i> Proses pembayaran</button></div></div></div>
+    </section>
+
+    <section class="page" id="page-purchases">
+      <div class="page-heading"><div><p class="eyebrow">SUPPLY CHAIN</p><h1>Pengadaan barang</h1><p class="muted">Buat PO, pantau status, dan terima stok ke gudang.</p></div><button class="button button-primary" id="new-purchase"><i data-lucide="plus"></i> Buat PO</button></div>
+      <div class="content-card"><div class="card-heading"><div><h2>Riwayat pembelian</h2><p class="muted">Dokumen purchase order dari supplier.</p></div></div><div class="table-wrap"><table><thead><tr><th>NOMOR PO</th><th>TANGGAL</th><th>SUPPLIER</th><th>GUDANG</th><th>JUMLAH ITEM</th><th>TOTAL</th><th>STATUS / AKSI</th></tr></thead><tbody id="purchase-table"><tr><td colspan="7" class="empty-state">Memuat riwayat...</td></tr></tbody></table></div></div>
+    </section>
+
+    <section class="page" id="page-opname">
+      <div class="page-heading"><div><p class="eyebrow">AUDIT PERSEDIAAN</p><h1>Stock opname</h1><p class="muted">Bandingkan stok sistem dengan hasil hitung fisik.</p></div></div>
+      <div class="content-card opname-card"><div class="card-heading"><div><h2>Hitung stok fisik</h2><p class="muted">Input jumlah aktual untuk setiap produk yang diperiksa.</p></div></div><div class="form-row"><label>Gudang<select id="opname-warehouse" class="select-control"></select></label><label>Petugas<select id="opname-employee" class="select-control"></select></label><label>Catatan<input id="opname-notes" class="input-control" placeholder="Opsional"></label></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>STOK SISTEM</th><th>STOK FISIK</th><th>SELISIH</th></tr></thead><tbody id="opname-table"><tr><td colspan="4" class="empty-state">Memuat data stok...</td></tr></tbody></table></div><div class="opname-footer"><span>Hanya baris yang diisi yang akan diproses.</span><button class="button button-primary" id="save-opname"><i data-lucide="check"></i> Simpan hasil opname</button></div></div>
+    </section>
+
+    <section class="page" id="page-products">
+      <div class="page-heading"><div><p class="eyebrow">KATALOG</p><h1>Produk</h1><p class="muted">Kelola produk, harga, dan ambang stok minimum.</p></div><button class="button button-primary" id="new-product"><i data-lucide="plus"></i> Tambah produk</button></div>
+      <div class="content-card"><div class="card-heading"><div><h2>Daftar produk</h2><p class="muted">Informasi master produk yang aktif.</p></div></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>BARCODE</th><th>KATEGORI</th><th>HARGA BELI</th><th>HARGA JUAL</th><th>AKSI</th></tr></thead><tbody id="product-table"><tr><td colspan="6" class="empty-state">Memuat produk...</td></tr></tbody></table></div></div>
+    </section>
+
+    <section class="page" id="page-suppliers">
+      <div class="page-heading"><div><p class="eyebrow">MITRA BISNIS</p><h1>Supplier</h1><p class="muted">Kelola informasi pemasok barang minimarket.</p></div><button class="button button-primary" id="new-supplier"><i data-lucide="plus"></i> Tambah supplier</button></div>
+      <div class="content-card"><div class="card-heading"><div><h2>Daftar supplier</h2><p class="muted">Data kontak supplier terdaftar.</p></div></div><div class="table-wrap"><table><thead><tr><th>NAMA SUPPLIER</th><th>KONTAK</th><th>EMAIL</th><th>ALAMAT</th><th>AKSI</th></tr></thead><tbody id="supplier-table"><tr><td colspan="5" class="empty-state">Memuat supplier...</td></tr></tbody></table></div></div>
+    </section>
+    <div id="toast" class="toast" role="status"></div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

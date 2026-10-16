@@ -1,0 +1,340 @@
+// ============================================================================
+// SKEMA BASIS DATA INVENTORY MINIMARKET (14 TABEL 3NF)
+// Standar Perancangan Basis Data Bu Dian (CDM dbdiagram.io)
+// ============================================================================
+
+Project DB_Inventory_Minimarket {
+  database_type: 'MySQL'
+  Note: '''
+    # Sistem Manajemen Stock-Inventory Minimarket
+    Implementasi 14 Tabel Ternormalisasi (3NF) mencakup:
+    - 5 Tabel Master (kategori, produk, supplier, karyawan, gudang)
+    - 1 Tabel Snapshot Persediaan Real-Time (current_stock)
+    - 8 Tabel Transaksi & Detail (pembelian, penjualan, retur, stock_opname)
+  '''
+}
+
+// ============================================================================
+// ENUMERASI STATUS & PILIHAN
+// ============================================================================
+
+Enum status_stok_enum {
+  Aman [note: 'Stok di atas batas minimum']
+  Menipis [note: 'Stok kurang dari atau sama dengan minimum']
+  Habis [note: 'Stok kosong (0)']
+}
+
+Enum status_pembayaran_enum {
+  Belum_Lunas [note: 'Belum Lunas']
+  Lunas [note: 'Lunas']
+  Diterima [note: 'Barang diterima dan stok masuk']
+}
+
+Enum metode_pembayaran_enum {
+  Tunai
+  Debit
+  QRIS
+}
+
+Enum jenis_retur_enum {
+  Ke_Supplier [note: 'Ke Supplier']
+  Dari_Pelanggan [note: 'Dari Pelanggan']
+}
+
+Enum alasan_retur_enum {
+  Rusak
+  Kadaluarsa
+  Tidak_Sesuai [note: 'Tidak Sesuai']
+}
+
+Enum status_opname_enum {
+  Draft
+  Selesai
+  Dibatalkan
+}
+
+Enum jenis_penyesuaian_enum {
+  Penambahan
+  Pengurangan
+  Tetap
+}
+
+// ============================================================================
+// KELOMPOK 1: TABEL MASTER (5 TABEL)
+// ============================================================================
+
+Table kategori {
+  id_kategori bigint [pk, increment, note: 'Primary Key kategori barang']
+  nama_kategori varchar(100) [not null, unique, note: 'Nama klasifikasi produk']
+  deskripsi varchar(255) [null, note: 'Keterangan kategori']
+
+  Note: 'Tabel Master Kategori untuk klasifikasi produk (Makanan, Minuman, Rumah Tangga, dll)'
+}
+
+Table supplier {
+  id_supplier bigint [pk, increment, note: 'Primary Key vendor/supplier']
+  nama_supplier varchar(120) [not null, note: 'Nama perusahaan pemasok']
+  alamat varchar(255) [null, note: 'Alamat kantor / gudang supplier']
+  no_telepon varchar(30) [null, note: 'Nomor telepon operasional']
+  email varchar(160) [null, unique, note: 'Email korespondensi PO']
+  kontak_person varchar(120) [null, note: 'Nama PIC sales pemasok']
+
+  Note: 'Tabel Master Supplier penyedia barang dagang minimarket'
+}
+
+Table karyawan {
+  id_karyawan bigint [pk, increment, note: 'Primary Key staf operasional']
+  nama_karyawan varchar(120) [not null, note: 'Nama lengkap karyawan']
+  jabatan varchar(60) [not null, note: 'Peran kerja: Kasir, Gudang, Purchasing, Manager']
+  no_telepon varchar(30) [null, note: 'Nomor telepon/HP aktif']
+  shift_kerja varchar(40) [null, note: 'Jadwal shift: Pagi, Siang, Reguler']
+
+  Note: 'Tabel Master Karyawan yang mengeksekusi kasir, audit, dan penerimaan PO'
+}
+
+Table gudang {
+  id_gudang bigint [pk, increment, note: 'Primary Key unit gudang/toko']
+  nama_gudang varchar(120) [not null, unique, note: 'Nama lokasi fisik: Toko Utama, Gudang Belakang']
+  lokasi varchar(255) [null, note: 'Alamat/area penempatan rak fisik']
+  kapasitas int [not null, default: 0, note: 'Daya tampung maksimum item']
+
+  Note: 'Tabel Master Gudang dan Titik Penjualan Minimarket'
+}
+
+Table produk {
+  id_produk bigint [pk, increment, note: 'Primary Key produk retail']
+  id_kategori bigint [not null, note: 'Foreign Key ke kategori']
+  barcode varchar(13) [not null, unique, note: 'Barcode standar EAN-13']
+  nama_produk varchar(160) [not null, note: 'Nama merek dan varian barang']
+  satuan varchar(30) [not null, default: 'pcs', note: 'Satuan jual: pcs, botol, kotak']
+  harga_beli decimal(14,2) [not null, default: 0, note: 'Harga beli HPP pengadaan']
+  harga_jual decimal(14,2) [not null, note: 'Harga jual etalase kasir']
+  stok_minimum int [not null, default: 5, note: 'Ambang batas peringatan stok menipis']
+  aktif boolean [not null, default: true, note: 'Status aktif barang di POS']
+
+  Note: 'Tabel Master Produk barang dagangan minimarket'
+}
+
+// ============================================================================
+// KELOMPOK 2: TABEL SNAPSHOT PERSEDIAAN (1 TABEL)
+// ============================================================================
+
+Table current_stock {
+  id_current_stock bigint [pk, increment, note: 'Primary Key snapshot']
+  id_produk bigint [not null, note: 'FK ke produk']
+  id_gudang bigint [not null, note: 'FK ke gudang']
+  jumlah_stok int [not null, default: 0, note: 'Saldo stok fisik aktual di lokasi']
+  stok_minimum int [not null, default: 5, note: 'Redundansi batas minimum untuk fast query']
+  status_stok status_stok_enum [not null, default: 'Habis', note: 'Status otomatis: Aman, Menipis, Habis']
+  tanggal_update timestamp [not null, default: `now()`, note: 'Waktu mutasi terakhir']
+
+  indexes {
+    (id_produk, id_gudang) [unique, name: 'uq_produk_gudang']
+  }
+
+  Note: 'Tabel Snapshot stok real-time yang dikoreksi trigger POS dan Opname'
+}
+
+// ============================================================================
+// KELOMPOK 3: TABEL TRANSAKSI PENGADAAN (2 TABEL)
+// ============================================================================
+
+Table pembelian {
+  id_pembelian bigint [pk, increment, note: 'Primary Key pembelian PO']
+  no_faktur varchar(40) [not null, unique, note: 'Nomor faktur / PO pembelian']
+  id_supplier bigint [not null, note: 'FK pemasok barang']
+  id_karyawan bigint [not null, note: 'FK petugas purchasing']
+  tanggal_pembelian datetime [not null, default: `now()`, note: 'Tanggal terbit PO']
+  total_harga decimal(14,2) [not null, default: 0, note: 'Akumulasi total tagihan']
+  status_pembayaran status_pembayaran_enum [not null, default: 'Belum Lunas', note: 'Status faktur: Belum Lunas, Lunas, Diterima']
+
+  Note: 'Header Transaksi Pengadaan Barang ke Supplier'
+}
+
+Table detail_pembelian {
+  id_detail_beli bigint [pk, increment, note: 'Primary Key rincian PO']
+  id_pembelian bigint [not null, note: 'FK ke header pembelian']
+  id_produk bigint [not null, note: 'FK barang yang dipesan']
+  jumlah int [not null, note: 'Kuantitas barang dibeli']
+  harga_satuan decimal(14,2) [not null, note: 'Harga satuan beli saat transaksi']
+  subtotal decimal(14,2) [not null, note: 'jumlah * harga_satuan']
+
+  indexes {
+    (id_pembelian, id_produk) [unique, name: 'uq_detail_beli_produk']
+  }
+
+  Note: 'Rincian item barang dalam pesanan pembelian (PO)'
+}
+
+// ============================================================================
+// KELOMPOK 4: TABEL TRANSAKSI PENJUALAN KASIR (2 TABEL)
+// ============================================================================
+
+Table penjualan {
+  id_penjualan bigint [pk, increment, note: 'Primary Key transaksi POS']
+  no_transaksi varchar(40) [not null, unique, note: 'Nomor struk kasir']
+  id_karyawan bigint [not null, note: 'FK kasir yang melayani']
+  id_gudang bigint [not null, note: 'FK toko/gudang tempat transaksi']
+  tanggal_penjualan datetime [not null, default: `now()`, note: 'Waktu transaksi belanja']
+  total_bayar decimal(14,2) [not null, default: 0, note: 'Total belanjaan pelanggan']
+  metode_pembayaran metode_pembayaran_enum [not null, note: 'Kanal bayar: Tunai, Debit, QRIS']
+
+  Note: 'Header Transaksi Penjualan Kasir (POS)'
+}
+
+Table detail_penjualan {
+  id_detail_jual bigint [pk, increment, note: 'Primary Key item terjual']
+  id_penjualan bigint [not null, note: 'FK ke transaksi penjualan']
+  id_produk bigint [not null, note: 'FK barang yang dibeli']
+  jumlah int [not null, note: 'Kuantitas beli (memicu trigger kurangi stok)']
+  harga_satuan decimal(14,2) [not null, note: 'Harga jual saat struk dicetak']
+  subtotal decimal(14,2) [not null, note: 'jumlah * harga_satuan']
+
+  indexes {
+    (id_penjualan, id_produk) [unique, name: 'uq_detail_jual_produk']
+  }
+
+  Note: 'Rincian item belanjaan kasir (memicu trigger pengurangan stok)'
+}
+
+// ============================================================================
+// KELOMPOK 5: TABEL TRANSAKSI RETUR (2 TABEL)
+// ============================================================================
+
+Table retur {
+  id_retur bigint [pk, increment, note: 'Primary Key retur']
+  no_retur varchar(40) [not null, unique, note: 'Nomor dokumen retur']
+  id_pembelian bigint [null, note: 'FK faktur pembelian (jika retur ke supplier)']
+  id_penjualan bigint [null, note: 'FK struk kasir (jika retur dari pelanggan)']
+  id_karyawan bigint [not null, note: 'FK petugas pembuat berita acara retur']
+  id_gudang bigint [not null, note: 'FK lokasi gudang terdampak']
+  tanggal_retur datetime [not null, default: `now()`, note: 'Waktu proses retur']
+  jenis_retur jenis_retur_enum [not null, note: 'Ke Supplier atau Dari Pelanggan']
+  total_nilai_retur decimal(14,2) [not null, default: 0, note: 'Total nilai ganti rugi/klaim']
+  status_retur varchar(40) [not null, default: 'Menunggu', note: 'Status klaim retur']
+
+  Note: 'Header Transaksi Retur Barang Supplier atau Pelanggan'
+}
+
+Table detail_retur {
+  id_detail_retur bigint [pk, increment, note: 'Primary Key item retur']
+  id_retur bigint [not null, note: 'FK ke header retur']
+  id_produk bigint [not null, note: 'FK barang yang diretur']
+  jumlah_retur int [not null, note: 'Jumlah fisik barang diretur']
+  harga_satuan decimal(14,2) [not null, note: 'Nilai per unit']
+  subtotal decimal(14,2) [not null, note: 'jumlah_retur * harga_satuan']
+  alasan alasan_retur_enum [not null, note: 'Kategori alasan retur']
+
+  indexes {
+    (id_retur, id_produk) [unique, name: 'uq_detail_retur_produk']
+  }
+
+  Note: 'Rincian barang rusak / cacat yang diretur'
+}
+
+// ============================================================================
+// KELOMPOK 6: TABEL AUDIT STOCK OPNAME (2 TABEL)
+// ============================================================================
+
+Table stock_opname {
+  id_opname bigint [pk, increment, note: 'Primary Key audit opname']
+  no_opname varchar(40) [not null, unique, note: 'Nomor berita acara opname']
+  id_gudang bigint [not null, note: 'FK gudang yang diaudit']
+  id_karyawan bigint [not null, note: 'FK petugas pemeriksa stok']
+  tanggal_opname datetime [not null, default: `now()`, note: 'Waktu pelaksanaan audit fisik']
+  status_opname status_opname_enum [not null, default: 'Selesai', note: 'Draft, Selesai, Dibatalkan']
+  keterangan varchar(255) [null, note: 'Catatan hasil audit']
+
+  Note: 'Header Berita Acara Audit Fisik Persediaan (Stock Opname)'
+}
+
+Table detail_stock_opname {
+  id_detail_opname bigint [pk, increment, note: 'Primary Key rincian hitung']
+  id_opname bigint [not null, note: 'FK header stock opname']
+  id_produk bigint [not null, note: 'FK barang yang dihitung']
+  stok_sistem int [not null, note: 'Saldo sistem sebelum audit']
+  stok_fisik int [not null, note: 'Hasil hitung nyata di rak (memicu trigger)']
+  selisih int [not null, note: 'stok_fisik - stok_sistem']
+  jenis_penyesuaian jenis_penyesuaian_enum [not null, note: 'Penambahan, Pengurangan, Tetap']
+  keterangan varchar(255) [null, note: 'Alasan perbedaan fisik vs sistem']
+
+  indexes {
+    (id_opname, id_produk) [unique, name: 'uq_detail_opname_produk']
+  }
+
+  Note: 'Rincian perbandingan fisik vs sistem (memicu trigger koreksi saldo)'
+}
+
+// ============================================================================
+// RELASI ANTAR TABEL (FOREIGN KEY CONSTRAINTS)
+// ============================================================================
+
+// Relasi Produk ke Kategori
+Ref: produk.id_kategori > kategori.id_kategori [delete: restrict, update: cascade]
+
+// Relasi Snapshot Current Stock
+Ref: current_stock.id_produk > produk.id_produk [delete: restrict, update: cascade]
+Ref: current_stock.id_gudang > gudang.id_gudang [delete: restrict, update: cascade]
+
+// Relasi Pembelian & Detail
+Ref: pembelian.id_supplier > supplier.id_supplier [delete: restrict, update: cascade]
+Ref: pembelian.id_karyawan > karyawan.id_karyawan [delete: restrict, update: cascade]
+Ref: detail_pembelian.id_pembelian > pembelian.id_pembelian [delete: cascade, update: cascade]
+Ref: detail_pembelian.id_produk > produk.id_produk [delete: restrict, update: cascade]
+
+// Relasi Penjualan & Detail
+Ref: penjualan.id_karyawan > karyawan.id_karyawan [delete: restrict, update: cascade]
+Ref: penjualan.id_gudang > gudang.id_gudang [delete: restrict, update: cascade]
+Ref: detail_penjualan.id_penjualan > penjualan.id_penjualan [delete: cascade, update: cascade]
+Ref: detail_penjualan.id_produk > produk.id_produk [delete: restrict, update: cascade]
+
+// Relasi Retur & Detail
+Ref: retur.id_pembelian > pembelian.id_pembelian [delete: restrict, update: cascade]
+Ref: retur.id_penjualan > penjualan.id_penjualan [delete: restrict, update: cascade]
+Ref: retur.id_karyawan > karyawan.id_karyawan [delete: restrict, update: cascade]
+Ref: retur.id_gudang > gudang.id_gudang [delete: restrict, update: cascade]
+Ref: detail_retur.id_retur > retur.id_retur [delete: cascade, update: cascade]
+Ref: detail_retur.id_produk > produk.id_produk [delete: restrict, update: cascade]
+
+// Relasi Stock Opname & Detail
+Ref: stock_opname.id_gudang > gudang.id_gudang [delete: restrict, update: cascade]
+Ref: stock_opname.id_karyawan > karyawan.id_karyawan [delete: restrict, update: cascade]
+Ref: detail_stock_opname.id_opname > stock_opname.id_opname [delete: cascade, update: cascade]
+Ref: detail_stock_opname.id_produk > produk.id_produk [delete: restrict, update: cascade]
+
+// ============================================================================
+// PENGELOMPOKAN TABEL (TABLE GROUPS)
+// ============================================================================
+
+TableGroup master_data {
+  kategori
+  supplier
+  karyawan
+  gudang
+  produk
+}
+
+TableGroup snapshot_data {
+  current_stock
+}
+
+TableGroup procurement_transactions {
+  pembelian
+  detail_pembelian
+}
+
+TableGroup pos_transactions {
+  penjualan
+  detail_penjualan
+}
+
+TableGroup return_transactions {
+  retur
+  detail_retur
+}
+
+TableGroup audit_transactions {
+  stock_opname
+  detail_stock_opname
+}
+

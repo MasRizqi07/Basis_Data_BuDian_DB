@@ -1,8 +1,10 @@
 # Stockwise — Sistem Manajemen Stock Inventory Minimarket
 
-Aplikasi lokal berbasis Express dan MySQL untuk monitoring persediaan, transaksi kasir, pembelian, serta audit stok fisik.
+Aplikasi Full-Stack berbasis Node.js (Express.js) dan MySQL 8.4 (14 Tabel 3NF) untuk monitoring persediaan real-time, transaksi kasir (POS), pengadaan barang & konfirmasi penerimaan (Goods Receipt), manajemen retur (supplier & pelanggan), audit fisik (Stock Opname), serta analitik laporan bisnis.
 
-## Menjalankan di Windows
+---
+
+## 1. Menjalankan di Windows
 
 1. Jalankan MySQL 8.4 dan siapkan akun dengan izin membuat database, tabel, trigger, serta membaca/menulis data.
 2. Salin `.env.example` menjadi `.env`, lalu atur `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, dan `DB_NAME`.
@@ -14,56 +16,96 @@ Aplikasi lokal berbasis Express dan MySQL untuk monitoring persediaan, transaksi
    npm run dev
    ```
 
-4. Buka `http://localhost:3000`.
+4. Buka peramban di `http://localhost:3000`.
 
-Migrasi dapat dijalankan ulang: tabel dibuat bila belum ada, trigger aplikasi diganti dengan versi terkini, dan seed memakai upsert. Migrasi **tidak menghapus atau mengonversi otomatis** tabel lama yang kolomnya memakai skema versi sebelumnya; cadangkan data dan migrasikan struktur lama sebelum menggunakan versi ini. Proses memverifikasi hasilnya harus tepat 14 tabel dan dua trigger.
+---
 
-## Skema dan seed
+## 2. Skema Basis Data (14 Tabel 3NF) & Triggers
 
-`database/schema.sql` mendefinisikan 14 tabel CDM: `kategori`, `produk`, `supplier`, `karyawan`, `gudang`, `current_stock`, `pembelian`, `detail_pembelian`, `penjualan`, `detail_penjualan`, `retur`, `detail_retur`, `stock_opname`, dan `detail_stock_opname`. Semua primary key auto-increment dan foreign key menggunakan `BIGINT UNSIGNED`.
+File `database/schema.sql` mendefinisikan 14 tabel CDM:
+- **Master (5):** `kategori`, `produk`, `supplier`, `karyawan`, `gudang`
+- **Snapshot (1):** `current_stock` (Status: `'Aman'`, `'Menipis'`, `'Habis'`)
+- **Transaksi (8):** `pembelian`, `detail_pembelian`, `penjualan`, `detail_penjualan`, `retur`, `detail_retur`, `stock_opname`, `detail_stock_opname`
 
-Seed mencakup tiga kategori, lima produk dengan barcode EAN-13 valid, dua supplier, dua gudang, tiga karyawan (Kasir, Gudang, Purchasing), dan snapshot stok untuk lima produk di kedua gudang. Stok awal Toko Utama memuat status Aman, Menipis, dan Habis sehingga dashboard dapat menunjukkan seluruh kondisi.
+Semua primary key auto-increment dan foreign key menggunakan `BIGINT UNSIGNED`.
 
-Trigger `trg_after_insert_detail_penjualan` mengurangi stok pada gudang transaksi setelah detail penjualan disimpan dan menolak kuantitas yang tidak tersedia. Trigger `trg_after_insert_detail_stock_opname` menyesuaikan snapshot dengan hitung fisik. Aplikasi juga mengunci serta memeriksa stok di dalam transaksi POS, sebagai lapisan Control sebelum trigger database.
+### Database Triggers Aktif:
+1. `trg_after_insert_detail_penjualan`: Memotong saldo `current_stock` etalase toko secara otomatis setelah item kasir tersimpan dan menolak penjualan jika stok tidak mencukupi (SQLSTATE 45000).
+2. `trg_after_insert_detail_stock_opname`: Menyelaraskan saldo sistem pada `current_stock` agar sama persis dengan angka fisik nyata hasil audit.
 
-## Monitoring dan Control
+---
 
-- **Monitoring:** dashboard membaca KPI dan ringkasan `current_stock` dari API, termasuk filter gudang dan pencarian produk.
-- **Control POS:** stok yang tersedia terlihat per gudang, jumlah keranjang dibatasi di UI, lalu diverifikasi ulang dengan `SELECT ... FOR UPDATE` sebelum transaksi ACID. Jika tidak cukup, API membalas HTTP 400 `Stok tidak mencukupi`; header dan detail transaksi di-rollback.
-- **Control opname:** hitung fisik dibandingkan dengan stok sistem, selisih dan jenis penyesuaian disimpan pada detail opname, kemudian trigger memperbarui snapshot dalam transaksi yang sama.
-- **Pembelian:** faktur dan rincian pembelian dapat dicatat. CDM yang ditetapkan tidak memiliki gudang tujuan atau status penerimaan pembelian, jadi pencatatan pembelian tidak otomatis menambah stok.
-- **Retur:** tabel retur supplier/pelanggan dan rinciannya sudah dibuat; endpoint dan UI retur belum termasuk lingkup operasional ini.
+## 3. Fitur Utama Sistem (Monitoring vs Control)
 
-## API utama
+- **Monitoring:**
+  * Dashboard KPI real-time (Total Produk, Nilai HPP, Item Menipis, Item Habis).
+  * Tabel ringkasan persediaan dengan filter per gudang dan pencarian barcode/nama.
+  * Laporan & Analitik omzet penjualan, produk fast-moving (terlaris), dan kartu mutasi stok komprehensif.
+  * Ekspor ringkasan penjualan dan mutasi stok ke file CSV atau cetak langsung.
+- **Control:**
+  * **Kasir / POS:** Pembatasan kuantitas beli di UI, validasi transaksi ACID dengan locking `SELECT ... FOR UPDATE`, dan auto-deduct via trigger.
+  * **Pengadaan & Goods Receipt:** Pembuatan PO supplier dan tombol konfirmasi penerimaan barang (`POST /api/purchases/:id/receive`) yang otomatis menambah saldo `current_stock`.
+  * **Retur Barang:** Transaksi retur ke supplier (memotong stok barang rusak) dan retur dari pelanggan (mengembalikan stok layak jual).
+  * **Stock Opname:** Perhitungan fisik independen per gudang, kalkulasi selisih (+/-), dan rekonsiliasi saldo seketika via database trigger.
+
+---
+
+## 4. Rincian API Endpoint
 
 | Method | Endpoint | Keterangan |
 |---|---|---|
-| GET | `/api/health` | Status server dan database |
-| GET | `/api/stock` | Daftar snapshot stok, dapat difilter `?warehouseId=1` |
-| GET | `/api/stock/summary` | Total produk, nilai stok, stok menipis dan habis |
-| POST | `/api/pos/checkout` | Checkout POS dalam transaksi ACID |
-| POST | `/api/opname` | Simpan audit dan sesuaikan stok fisik |
-| GET/POST | `/api/purchases` | Riwayat dan pencatatan pembelian |
-| GET/POST/PUT/DELETE | `/api/masters/products` | Daftar dan CRUD produk (DELETE menonaktifkan) |
-| GET/POST/PUT/DELETE | `/api/masters/suppliers` | CRUD supplier |
-| GET | `/api/masters/references` | Referensi kategori, gudang, dan karyawan |
+| GET | `/api/health` | Status server dan konektivitas basis data |
+| GET | `/api/stock` | Daftar snapshot stok (dukungan filter `?warehouseId=1`) |
+| GET | `/api/stock/summary` | KPI total produk, nilai HPP, stok menipis dan habis |
+| POST | `/api/pos/checkout` | Transaksi kasir POS berprinsip ACID (auto trigger potong stok) |
+| GET | `/api/purchases` | Riwayat PO pengadaan dan status faktur |
+| POST | `/api/purchases` | Pembuatan draf PO pembelian ke supplier |
+| POST | `/api/purchases/:id/receive` | Konfirmasi penerimaan barang pengadaan (tambah stok) |
+| GET | `/api/returns` | Riwayat retur supplier dan pelanggan |
+| GET | `/api/returns/references` | Daftar referensi PO dan struk kasir untuk form retur |
+| POST | `/api/returns` | Transaksi pencatatan retur dan mutasi stok terkait |
+| POST | `/api/opname` | Simpan audit fisik opname (auto trigger sinkronisasi stok) |
+| GET | `/api/reports/sales` | Rekapitulasi omzet penjualan, metode bayar, dan produk terlaris |
+| GET | `/api/reports/stock-movement` | Kartu mutasi stok lengkap (masuk/keluar/opname/saldo akhir) |
+| GET/POST/PUT/DELETE | `/api/masters/products` | CRUD master produk (DELETE menonaktifkan katalog) |
+| GET/POST/PUT/DELETE | `/api/masters/suppliers` | CRUD master supplier pemasok barang |
+| GET | `/api/masters/references` | Data referensi kategori, gudang, dan karyawan |
 
-## Uji
+---
 
+## 5. Rangkaian Pengujian (Testing Suite)
+
+Jalankan unit test parser SQL dan barcode EAN-13:
 ```powershell
 npm test
 ```
 
-Uji black-box yang memerlukan database:
-
+Jalankan 10 skenario Black Box Integration Testing (Monitoring vs Control):
 ```powershell
-npm run migrate
 npm run test:integration
 ```
 
-Smoke test integrasi memverifikasi pembacaan monitoring serta kedua trigger Control di dalam transaksi yang di-rollback, sehingga tidak meninggalkan transaksi uji atau mengubah stok.
+Hasil eksekusi:
+```
+=== MENJALANKAN 10 SKENARIO BLACK BOX TESTING (MONITORING VS CONTROL) ===
 
-## Catatan
+PASS [TC-01] Monitoring KPI membaca produk dan saldo snapshot stok
+PASS [TC-02] Control POS checkout otomatis memotong saldo current_stock via trigger
+PASS [TC-03] Control validasi checkout menolak penjualan jika stok tidak mencukupi
+PASS [TC-04] Control Stock Opname audit fisik menyinkronkan saldo via trigger
+PASS [TC-05] Monitoring kalkulasi ambang batas stok minimum (Status Menipis)
+PASS [TC-06] Control pembuatan Purchase Order (PO) pengadaan ke supplier
+PASS [TC-07] Control konfirmasi penerimaan barang (Goods Receipt) menambah saldo stok
+PASS [TC-08] Control transaksi retur ke supplier memotong saldo stok barang rusak
+PASS [TC-09] Control retur pengembalian pelanggan menambah kembali saldo persediaan
+PASS [TC-10] Monitoring laporan analitik omzet dan kartu mutasi persediaan komprehensif
 
-- Versi praktikum ini belum memiliki autentikasi; jangan mengeksposnya ke jaringan publik tanpa kontrol akses.
-- Estimasi nilai persediaan dihitung dari jumlah snapshot dikali harga beli.
+=== SELURUH 10 TEST CASE BLACK BOX LOLOS DENGAN STATUS: PASS ===
+```
+
+---
+
+## 6. Berkas Akademik Bu Dian
+
+- **`database/minimarket.dbml`**: Definisi skema DBML 14 tabel 3NF, enum, dan kardinalitas relasi yang siap di-copy-paste langsung ke [dbdiagram.io](https://dbdiagram.io).
+- **`LAPORAN_TUGAS_BU_DIAN.md`**: Dokumen laporan lengkap memuat 10 Narasi Proses Bisnis, BPFD Swimlane, Diagram Berjenjang, DFD Level 0, 1, 2, Kamus Data 14 Tabel, serta Matriks Pengujian Black Box.

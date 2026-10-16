@@ -20,7 +20,9 @@
       <button class="nav-link active" data-page="dashboard"><i data-lucide="layout-dashboard"></i>Dashboard</button>
       <button class="nav-link" data-page="pos"><i data-lucide="shopping-cart"></i>Kasir / POS</button>
       <button class="nav-link" data-page="purchases"><i data-lucide="truck"></i>Pengadaan <span class="nav-dot"></span></button>
+      <button class="nav-link" data-page="returns"><i data-lucide="rotate-ccw"></i>Retur Barang</button>
       <button class="nav-link" data-page="opname"><i data-lucide="clipboard-check"></i>Stock Opname</button>
+      <button class="nav-link" data-page="reports"><i data-lucide="bar-chart-3"></i>Laporan & Analitik</button>
     </nav>
     <p class="nav-label nav-gap">MANAJEMEN</p>
     <nav class="main-nav">
@@ -51,12 +53,29 @@
 
     <section class="page" id="page-purchases">
       <div class="page-heading"><div><p class="eyebrow">SUPPLY CHAIN</p><h1>Pengadaan barang</h1><p class="muted">Buat PO, pantau status, dan terima stok ke gudang.</p></div><button class="button button-primary" id="new-purchase"><i data-lucide="plus"></i> Buat PO</button></div>
-      <div class="content-card"><div class="card-heading"><div><h2>Riwayat pembelian</h2><p class="muted">Catatan faktur dan pembayaran supplier.</p></div></div><div class="table-wrap"><table><thead><tr><th>NO. FAKTUR</th><th>TANGGAL</th><th>SUPPLIER</th><th>PETUGAS</th><th>JUMLAH ITEM</th><th>TOTAL</th><th>STATUS PEMBAYARAN</th></tr></thead><tbody id="purchase-table"><tr><td colspan="7" class="empty-state">Memuat riwayat...</td></tr></tbody></table></div></div>
+      <div class="content-card"><div class="card-heading"><div><h2>Riwayat pembelian</h2><p class="muted">Catatan faktur dan penerimaan barang supplier.</p></div></div><div class="table-wrap"><table><thead><tr><th>NO. FAKTUR</th><th>TANGGAL</th><th>SUPPLIER</th><th>PETUGAS</th><th>JUMLAH ITEM</th><th>TOTAL</th><th>STATUS PEMBAYARAN</th><th>AKSI</th></tr></thead><tbody id="purchase-table"><tr><td colspan="8" class="empty-state">Memuat riwayat...</td></tr></tbody></table></div></div>
+    </section>
+
+    <section class="page" id="page-returns">
+      <div class="page-heading"><div><p class="eyebrow">PENGEMBALIAN BARANG</p><h1>Retur Barang</h1><p class="muted">Kelola retur barang ke supplier atau retur pengembalian dari pelanggan.</p></div><button class="button button-primary" id="new-return"><i data-lucide="plus"></i> Catat Retur Baru</button></div>
+      <div class="content-card"><div class="card-heading"><div><h2>Riwayat retur</h2><p class="muted">Catatan mutasi retur dan penyesuaian stok.</p></div><div class="card-actions"><select id="return-type-filter" class="select-control"><option value="">Semua jenis retur</option><option value="Ke Supplier">Ke Supplier</option><option value="Dari Pelanggan">Dari Pelanggan</option></select></div></div><div class="table-wrap"><table><thead><tr><th>NO. RETUR</th><th>TANGGAL</th><th>JENIS RETUR</th><th>REFERENSI</th><th>GUDANG</th><th>PETUGAS</th><th>TOTAL NILAI</th><th>STATUS</th></tr></thead><tbody id="return-table"><tr><td colspan="8" class="empty-state">Memuat riwayat retur...</td></tr></tbody></table></div></div>
     </section>
 
     <section class="page" id="page-opname">
       <div class="page-heading"><div><p class="eyebrow">AUDIT PERSEDIAAN</p><h1>Stock opname</h1><p class="muted">Bandingkan stok sistem dengan hasil hitung fisik.</p></div></div>
       <div class="content-card opname-card"><div class="card-heading"><div><h2>Hitung stok fisik</h2><p class="muted">Input jumlah aktual untuk setiap produk yang diperiksa.</p></div></div><div class="form-row"><label>Gudang<select id="opname-warehouse" class="select-control"></select></label><label>Petugas<select id="opname-employee" class="select-control"></select></label><label>Catatan<input id="opname-notes" class="input-control" placeholder="Opsional"></label></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>STOK SISTEM</th><th>STOK FISIK</th><th>SELISIH</th></tr></thead><tbody id="opname-table"><tr><td colspan="4" class="empty-state">Memuat data stok...</td></tr></tbody></table></div><div class="opname-footer"><span>Hanya baris yang diisi yang akan diproses.</span><button class="button button-primary" id="save-opname"><i data-lucide="check"></i> Simpan hasil opname</button></div></div>
+    </section>
+
+    <section class="page" id="page-reports">
+      <div class="page-heading"><div><p class="eyebrow">ANALISIS & BISNIS</p><h1>Laporan & Analitik</h1><p class="muted">Monitoring kinerja penjualan, produk terlaris, dan kartu mutasi stok komprehensif.</p></div><div class="table-action"><button class="button button-secondary" id="export-sales-csv"><i data-lucide="download"></i> CSV Penjualan</button><button class="button button-secondary" id="export-movement-csv"><i data-lucide="download"></i> CSV Mutasi Stok</button><button class="button button-primary" id="print-reports"><i data-lucide="printer"></i> Cetak Laporan</button></div></div>
+      <div class="kpi-grid">
+        <article class="kpi-card"><div class="kpi-top"><span>Total Omzet</span><span class="kpi-icon blue"><i data-lucide="wallet"></i></span></div><div class="kpi-value" id="rep-omzet">—</div><div class="kpi-foot"><span class="trend neutral">Akumulasi</span><span class="muted">penjualan kasir</span></div></article>
+        <article class="kpi-card"><div class="kpi-top"><span>Total Transaksi</span><span class="kpi-icon violet"><i data-lucide="shopping-bag"></i></span></div><div class="kpi-value" id="rep-transaksi">—</div><div class="kpi-foot"><span class="trend neutral">Struk belanja</span><span class="muted">berhasil dibayar</span></div></article>
+        <article class="kpi-card"><div class="kpi-top"><span>Rata-Rata Keranjang</span><span class="kpi-icon amber"><i data-lucide="receipt"></i></span></div><div class="kpi-value" id="rep-avg">—</div><div class="kpi-foot"><span class="trend warning">Rata-rata</span><span class="muted">per transaksi</span></div></article>
+        <article class="kpi-card"><div class="kpi-top"><span>Produk Terlaris</span><span class="kpi-icon green"><i data-lucide="flame"></i></span></div><div class="kpi-value" id="rep-top-product" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div><div class="kpi-foot"><span class="trend neutral">Fast Moving</span><span class="muted">kuantitas tertinggi</span></div></article>
+      </div>
+      <div class="content-card stock-card"><div class="card-heading"><div><h2>Produk Fast Moving (Terlaris)</h2><p class="muted">10 produk dengan volume penjualan tertinggi.</p></div></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>BARCODE</th><th>KATEGORI</th><th>TOTAL TERJUAL</th><th>TOTAL PENDAPATAN</th></tr></thead><tbody id="fast-moving-table"><tr><td colspan="5" class="empty-state">Memuat data produk terlaris...</td></tr></tbody></table></div></div>
+      <div class="content-card"><div class="card-heading"><div><h2>Kartu Mutasi Stok Komprehensif (Stock Movement Audit)</h2><p class="muted">Pelacakan stok masuk (pengadaan/retur pelanggan) dan keluar (kasir/retur supplier).</p></div><div class="card-actions"><select id="movement-warehouse-filter" class="select-control"><option value="">Semua gudang</option></select></div></div><div class="table-wrap"><table><thead><tr><th>PRODUK</th><th>GUDANG</th><th>STOK SAAT INI</th><th>MASUK (PO DITERIMA)</th><th>MASUK (RETUR CUST)</th><th>KELUAR (KASIR POS)</th><th>KELUAR (RETUR SUPP)</th><th>PENYESUAIAN OPNAME</th><th>STATUS</th></tr></thead><tbody id="stock-movement-table"><tr><td colspan="9" class="empty-state">Memuat mutasi stok...</td></tr></tbody></table></div></div>
     </section>
 
     <section class="page" id="page-products">

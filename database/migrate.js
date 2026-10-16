@@ -229,7 +229,7 @@ async function upgradeLegacySchema(connection, databaseName) {
     ['karyawan', 'shift_kerja', 'VARCHAR(40) NULL'],
     ['gudang', 'kapasitas', 'INT UNSIGNED NOT NULL DEFAULT 0'],
     ['current_stock', 'stok_minimum', 'INT UNSIGNED NOT NULL DEFAULT 5'],
-    ['pembelian', 'status_pembayaran', "ENUM('Belum Lunas','Lunas') NOT NULL DEFAULT 'Belum Lunas'"],
+    ['pembelian', 'status_pembayaran', "ENUM('Belum Lunas','Lunas','Diterima') NOT NULL DEFAULT 'Belum Lunas'"],
     ['retur', 'total_nilai_retur', 'DECIMAL(14,2) NOT NULL DEFAULT 0'],
     ['retur', 'status_retur', "VARCHAR(40) NOT NULL DEFAULT 'Menunggu'"],
     ['detail_retur', 'harga_satuan', 'DECIMAL(14,2) NOT NULL DEFAULT 0'],
@@ -242,6 +242,18 @@ async function upgradeLegacySchema(connection, databaseName) {
   for (const [tableName, columnName, definition] of additions) {
     if (tables.has(tableName.toLowerCase())) {
       await addColumnIfMissing(connection, databaseName, tableName, columnName, definition);
+    }
+  }
+
+  if (tables.has('pembelian')) {
+    const columns = await getTableColumns(connection, databaseName, 'pembelian');
+    if (columns.has('id_gudang')) {
+      await connection.query('ALTER TABLE pembelian MODIFY COLUMN id_gudang BIGINT UNSIGNED NULL');
+    }
+    if (columns.has('status_pembayaran')) {
+      await connection.query(
+        "ALTER TABLE pembelian MODIFY COLUMN status_pembayaran ENUM('Belum Lunas','Lunas','Diterima') NOT NULL DEFAULT 'Belum Lunas'"
+      );
     }
   }
 

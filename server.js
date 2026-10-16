@@ -25,6 +25,8 @@ app.use('/api/pos', require('./routes/posRoutes'));
 app.use('/api/opname', require('./routes/opnameRoutes'));
 app.use('/api/masters', require('./routes/masterRoutes'));
 app.use('/api/purchases', require('./routes/purchaseRoutes'));
+app.use('/api/returns', require('./routes/returnRoutes'));
+app.use('/api/reports', require('./routes/reportRoutes'));
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Endpoint API tidak ditemukan.' }));
 app.use((error, _req, res, _next) => {

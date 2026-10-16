@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS pembelian (
   id_karyawan BIGINT UNSIGNED NOT NULL,
   tanggal_pembelian DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   total_harga DECIMAL(14, 2) NOT NULL DEFAULT 0,
-  status_pembayaran ENUM('Belum Lunas', 'Lunas') NOT NULL DEFAULT 'Belum Lunas',
+  status_pembayaran ENUM('Belum Lunas', 'Lunas', 'Diterima') NOT NULL DEFAULT 'Belum Lunas',
   PRIMARY KEY (id_pembelian),
   UNIQUE KEY uq_pembelian_no_faktur (no_faktur),
   CONSTRAINT chk_pembelian_total CHECK (total_harga >= 0),

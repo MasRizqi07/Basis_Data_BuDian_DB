@@ -5,6 +5,8 @@ const state = {
   stock: [],
   posStock: [],
   opnameStock: [],
+  returns: [],
+  reports: { sales: null, movement: [] },
   cart: new Map()
 };
 
@@ -45,6 +47,7 @@ function setOptions(selector, items, placeholder) {
 async function loadReferences() {
   state.references = await api('/api/masters/references');
   setOptions('#warehouse-filter', state.references.warehouses, 'Semua gudang');
+  setOptions('#movement-warehouse-filter', state.references.warehouses, 'Semua gudang');
   setOptions('#pos-warehouse', state.references.warehouses);
   setOptions('#opname-warehouse', state.references.warehouses);
   setOptions('#pos-employee', state.references.employees.filter((item) => item.jabatan === 'Kasir' || item.jabatan === 'Admin'));
@@ -191,8 +194,40 @@ async function loadSuppliers() {
 
 async function loadPurchases() {
   const rows = await api('/api/purchases');
-  document.querySelector('#purchase-table').innerHTML = rows.length ? rows.map((item) => `
-    <tr><td><b>${escapeHtml(item.no_faktur)}</b></td><td>${new Date(item.tanggal_pembelian).toLocaleDateString('id-ID')}</td><td>${escapeHtml(item.nama_supplier)}</td><td>${escapeHtml(item.nama_karyawan)}</td><td>${item.jumlah_item} item</td><td>${rupiah(item.total_harga)}</td><td><span class="badge ${item.status_pembayaran === 'Lunas' ? 'safe' : 'low'}">${escapeHtml(item.status_pembayaran)}</span></td></tr>`).join('') : '<tr><td colspan="7" class="empty-state">Belum ada pembelian.</td></tr>';
+  document.querySelector('#purchase-table').innerHTML = rows.length ? rows.map((item) => {
+    const isReceived = item.status_pembayaran === 'Diterima';
+    const actionCell = isReceived
+      ? '<span class="badge safe">Telah Diterima</span>'
+      : `<button class="action-button" data-receive-purchase="${item.id_pembelian}">Terima Barang</button>`;
+    return `
+    <tr>
+      <td><b>${escapeHtml(item.no_faktur)}</b></td>
+      <td>${new Date(item.tanggal_pembelian).toLocaleDateString('id-ID')}</td>
+      <td>${escapeHtml(item.nama_supplier)}</td>
+      <td>${escapeHtml(item.nama_karyawan)}</td>
+      <td>${item.jumlah_item} item</td>
+      <td>${rupiah(item.total_harga)}</td>
+      <td><span class="badge ${item.status_pembayaran === 'Diterima' ? 'safe' : item.status_pembayaran === 'Lunas' ? 'safe' : 'low'}">${escapeHtml(item.status_pembayaran)}</span></td>
+      <td>${actionCell}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty-state">Belum ada pembelian.</td></tr>';
+
+  document.querySelectorAll('[data-receive-purchase]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const id = Number(button.dataset.receivePurchase);
+      if (!confirm('Konfirmasi penerimaan barang untuk faktur ini? Saldo stok di gudang akan otomatis bertambah.')) return;
+      try {
+        const res = await api(`/api/purchases/${id}/receive`, {
+          method: 'POST',
+          body: JSON.stringify({ warehouseId: 1 })
+        });
+        toast(`Barang faktur ${res.invoiceNumber} berhasil diterima dan stok ditambahkan.`);
+        await Promise.all([loadPurchases(), loadDashboard(), loadProducts(), loadPosStock(), loadOpnameStock()]);
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
 }
 
 async function checkout() {
@@ -357,6 +392,246 @@ function openPurchaseModal() {
   });
 }
 
+async function loadReturns() {
+  state.returns = await api('/api/returns');
+  renderReturns();
+}
+
+function renderReturns() {
+  const filterType = document.querySelector('#return-type-filter')?.value || '';
+  const rows = state.returns.filter((item) => !filterType || item.jenis_retur === filterType);
+  document.querySelector('#return-table').innerHTML = rows.length ? rows.map((item) => {
+    const refCode = item.no_faktur || item.no_transaksi || '—';
+    const typeBadge = item.jenis_retur === 'Dari Pelanggan' ? 'safe' : 'low';
+    return `
+      <tr>
+        <td><b>${escapeHtml(item.no_retur)}</b></td>
+        <td>${new Date(item.tanggal_retur).toLocaleDateString('id-ID')}</td>
+        <td><span class="badge ${typeBadge}">${escapeHtml(item.jenis_retur)}</span></td>
+        <td><span style="font-family:monospace;font-size:10px">${escapeHtml(refCode)}</span></td>
+        <td>${escapeHtml(item.nama_gudang)}</td>
+        <td>${escapeHtml(item.nama_karyawan)}</td>
+        <td><b>${rupiah(item.total_nilai_retur)}</b></td>
+        <td><span class="badge safe">${escapeHtml(item.status_retur)}</span></td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="8" class="empty-state">Belum ada transaksi retur.</td></tr>';
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function openReturnModal() {
+  const refs = await api('/api/returns/references');
+  const warehouseOptions = state.references.warehouses.map((w) => `<option value="${w.id}">${escapeHtml(w.name)}</option>`).join('');
+  const employeeOptions = state.references.employees.map((e) => `<option value="${e.id}">${escapeHtml(e.name)} (${escapeHtml(e.jabatan)})</option>`).join('');
+  const productOptions = state.products.filter((p) => p.aktif).map((p) =>
+    `<option value="${p.id_produk}" data-beli="${p.harga_beli}" data-jual="${p.harga_jual}">${escapeHtml(p.nama_produk)}</option>`
+  ).join('');
+
+  openModal(`
+    <h2>Catat Transaksi Retur</h2>
+    <form id="return-form">
+      <div class="form-row">
+        <label>Jenis Retur
+          <select name="returnType" id="ret-modal-type">
+            <option value="Ke Supplier">Ke Supplier (Pengembalian Barang Rusak/Expired)</option>
+            <option value="Dari Pelanggan">Dari Pelanggan (Barang Dikembalikan Customer)</option>
+          </select>
+        </label>
+        <label>Gudang
+          <select name="warehouseId">${warehouseOptions}</select>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>Referensi Asal (Faktur PO / Struk Kasir)
+          <select name="referenceId" id="ret-modal-ref"></select>
+        </label>
+        <label>Petugas Penanggung Jawab
+          <select name="employeeId">${employeeOptions}</select>
+        </label>
+      </div>
+      <label>Item Retur</label>
+      <div class="purchase-items" id="return-items"></div>
+      <button type="button" class="text-button" id="add-return-item">+ Tambah item retur</button>
+      <div class="modal-actions">
+        <button type="button" class="button button-secondary" id="modal-cancel">Batal</button>
+        <button class="button button-primary">Simpan Transaksi Retur</button>
+      </div>
+    </form>
+  `);
+
+  const syncRefOptions = () => {
+    const isSupplier = document.querySelector('#ret-modal-type').value === 'Ke Supplier';
+    const list = isSupplier ? refs.purchases : refs.sales;
+    const refSelect = document.querySelector('#ret-modal-ref');
+    if (!list || !list.length) {
+      refSelect.innerHTML = `<option value="">Tidak ada ${isSupplier ? 'faktur pembelian' : 'struk penjualan'}</option>`;
+    } else {
+      refSelect.innerHTML = list.map((item) => `<option value="${item.id}">${escapeHtml(item.label || item.code)}</option>`).join('');
+    }
+  };
+
+  const syncPrice = (row) => {
+    const select = row.querySelector('.return-product');
+    const opt = select.options[select.selectedIndex];
+    const isSupplier = document.querySelector('#ret-modal-type').value === 'Ke Supplier';
+    const price = isSupplier ? opt?.dataset.beli : opt?.dataset.jual;
+    row.querySelector('.return-price').value = price || 0;
+  };
+
+  document.querySelector('#ret-modal-type').addEventListener('change', () => {
+    syncRefOptions();
+    document.querySelectorAll('.return-item').forEach((row) => syncPrice(row));
+  });
+
+  const addLine = () => {
+    const row = document.createElement('div');
+    row.className = 'purchase-item return-item';
+    row.innerHTML = `
+      <select class="return-product">${productOptions}</select>
+      <input class="return-quantity" type="number" min="1" value="1" placeholder="Qty">
+      <input class="return-price" type="number" min="0" placeholder="Harga">
+      <select class="return-reason" style="width:110px">
+        <option value="Rusak">Rusak</option>
+        <option value="Kadaluarsa">Kadaluarsa</option>
+        <option value="Tidak Sesuai">Tidak Sesuai</option>
+      </select>
+      <button type="button" aria-label="Hapus item">×</button>
+    `;
+    const sel = row.querySelector('.return-product');
+    sel.addEventListener('change', () => syncPrice(row));
+    row.querySelector('button').addEventListener('click', () => row.remove());
+    document.querySelector('#return-items').append(row);
+    syncPrice(row);
+  };
+
+  document.querySelector('#add-return-item').addEventListener('click', addLine);
+  document.querySelector('#modal-cancel').addEventListener('click', closeModal);
+  syncRefOptions();
+  addLine();
+
+  document.querySelector('#return-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    const items = [...form.querySelectorAll('.return-item')].map((row) => ({
+      productId: Number(row.querySelector('.return-product').value),
+      quantity: Number(row.querySelector('.return-quantity').value),
+      unitPrice: Number(row.querySelector('.return-price').value),
+      reason: row.querySelector('.return-reason').value
+    }));
+
+    if (!items.length) return toast('Tambahkan minimal satu item barang untuk retur.', true);
+    if (!values.referenceId) return toast('Pilih dokumen referensi asal retur.', true);
+
+    try {
+      const res = await api('/api/returns', {
+        method: 'POST',
+        body: JSON.stringify({
+          returnType: values.returnType,
+          warehouseId: Number(values.warehouseId),
+          employeeId: Number(values.employeeId),
+          referenceId: Number(values.referenceId),
+          items
+        })
+      });
+      closeModal();
+      toast(`Retur ${res.returnNumber} berhasil diproses dan saldo stok disesuaikan.`);
+      await Promise.all([loadReturns(), loadDashboard(), loadProducts(), loadPosStock(), loadOpnameStock()]);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
+}
+
+async function loadReports() {
+  const warehouse = document.querySelector('#movement-warehouse-filter')?.value || '';
+  const [salesData, movementRows] = await Promise.all([
+    api('/api/reports/sales'),
+    api(`/api/reports/stock-movement${warehouse ? `?warehouseId=${encodeURIComponent(warehouse)}` : ''}`)
+  ]);
+
+  state.reports = { sales: salesData, movement: movementRows };
+
+  const { summary, fastMoving } = salesData;
+  document.querySelector('#rep-omzet').textContent = rupiah(summary.total_omzet);
+  document.querySelector('#rep-transaksi').textContent = Number(summary.total_transaksi).toLocaleString('id-ID');
+  document.querySelector('#rep-avg').textContent = rupiah(summary.rata_rata_transaksi);
+  document.querySelector('#rep-top-product').textContent = fastMoving.length
+    ? `${fastMoving[0].nama_produk} (${fastMoving[0].total_terjual} ${fastMoving[0].satuan})`
+    : '—';
+
+  document.querySelector('#fast-moving-table').innerHTML = fastMoving.length ? fastMoving.map((item) => `
+    <tr>
+      <td><div class="product-cell"><span class="product-thumb"><i data-lucide="flame"></i></span><b>${escapeHtml(item.nama_produk)}</b></div></td>
+      <td>${escapeHtml(item.barcode)}</td>
+      <td>${escapeHtml(item.nama_kategori)}</td>
+      <td><b>${item.total_terjual}</b> ${escapeHtml(item.satuan)}</td>
+      <td>${rupiah(item.total_pendapatan)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="empty-state">Belum ada transaksi penjualan produk.</td></tr>';
+
+  document.querySelector('#stock-movement-table').innerHTML = movementRows.length ? movementRows.map((item) => `
+    <tr>
+      <td><div class="product-cell"><span class="product-thumb"><i data-lucide="package"></i></span><b>${escapeHtml(item.nama_produk)}</b></div></td>
+      <td>${escapeHtml(item.nama_gudang)}</td>
+      <td><span class="stock-number">${item.stok_saat_ini}</span> ${escapeHtml(item.satuan)}</td>
+      <td style="color:#2f9e44">+${item.total_masuk_pengadaan}</td>
+      <td style="color:#2f9e44">+${item.total_masuk_retur}</td>
+      <td style="color:#e03131">-${item.total_keluar_penjualan}</td>
+      <td style="color:#e03131">-${item.total_keluar_retur}</td>
+      <td class="difference ${item.total_penyesuaian_opname > 0 ? 'positive' : item.total_penyesuaian_opname < 0 ? 'negative' : 'zero'}">${item.total_penyesuaian_opname > 0 ? '+' : ''}${item.total_penyesuaian_opname}</td>
+      <td>${statusBadge(item.status_stok)}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="9" class="empty-state">Data mutasi belum tersedia.</td></tr>';
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function downloadCSV(filename, csvContent) {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  toast(`File ${filename} berhasil diunduh.`);
+}
+
+function exportSalesCSV() {
+  if (!state.reports?.sales) return toast('Data penjualan belum siap diekspor.', true);
+  const { summary, fastMoving, paymentBreakdown } = state.reports.sales;
+  let csv = 'REKAP PENJUALAN MINIMARKET\r\n';
+  csv += `Total Transaksi,${summary.total_transaksi}\r\n`;
+  csv += `Total Omzet,${summary.total_omzet}\r\n`;
+  csv += `Rata-Rata Transaksi,${summary.rata_rata_transaksi}\r\n\r\n`;
+
+  csv += 'METODE PEMBAYARAN,JUMLAH TRANSAKSI,TOTAL NOMINAL\r\n';
+  paymentBreakdown.forEach((p) => {
+    csv += `"${p.metode_pembayaran}",${p.jumlah_transaksi},${p.total_nominal}\r\n`;
+  });
+  csv += '\r\nPRODUK TERLARIS (FAST MOVING),BARCODE,KATEGORI,JUMLAH TERJUAL,TOTAL PENDAPATAN\r\n';
+  fastMoving.forEach((p) => {
+    csv += `"${p.nama_produk}","${p.barcode}","${p.nama_kategori}",${p.total_terjual},${p.total_pendapatan}\r\n`;
+  });
+
+  downloadCSV(`Laporan_Penjualan_${new Date().toISOString().slice(0, 10)}.csv`, csv);
+}
+
+function exportMovementCSV() {
+  if (!state.reports?.movement?.length) return toast('Data mutasi stok belum siap diekspor.', true);
+  let csv = 'PRODUK,BARCODE,GUDANG,STOK SAAT INI,MASUK PENGADAAN,MASUK RETUR PELANGGAN,KELUAR KASIR POS,KELUAR RETUR SUPPLIER,PENYESUAIAN OPNAME,STATUS\r\n';
+  state.reports.movement.forEach((m) => {
+    csv += `"${m.nama_produk}","${m.barcode}","${m.nama_gudang}",${m.stok_saat_ini},${m.total_masuk_pengadaan},${m.total_masuk_retur},${m.total_keluar_penjualan},${m.total_keluar_retur},${m.total_penyesuaian_opname},"${m.status_stok}"\r\n`;
+  });
+
+  downloadCSV(`Kartu_Mutasi_Stok_${new Date().toISOString().slice(0, 10)}.csv`, csv);
+}
+
+function printReports() {
+  window.print();
+}
+
 function switchPage(name) {
   document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${name}`));
   document.querySelectorAll('.nav-link').forEach((link) => link.classList.toggle('active', link.dataset.page === name));
@@ -364,6 +639,8 @@ function switchPage(name) {
   document.querySelector('#breadcrumb-current').textContent = active?.textContent.trim() || 'Dashboard';
   document.querySelector('.sidebar').classList.remove('open');
   if (name === 'purchases') loadPurchases().catch((error) => toast(error.message, true));
+  if (name === 'returns') loadReturns().catch((error) => toast(error.message, true));
+  if (name === 'reports') loadReports().catch((error) => toast(error.message, true));
   if (name === 'products') loadProducts().catch((error) => toast(error.message, true));
   if (name === 'suppliers') loadSuppliers().catch((error) => toast(error.message, true));
 }
@@ -406,6 +683,12 @@ document.querySelector('#save-opname').addEventListener('click', saveOpname);
 document.querySelector('#new-product').addEventListener('click', () => openProductModal());
 document.querySelector('#new-supplier').addEventListener('click', () => openSupplierModal());
 document.querySelector('#new-purchase').addEventListener('click', openPurchaseModal);
+document.querySelector('#new-return')?.addEventListener('click', openReturnModal);
+document.querySelector('#return-type-filter')?.addEventListener('change', renderReturns);
+document.querySelector('#movement-warehouse-filter')?.addEventListener('change', loadReports);
+document.querySelector('#export-sales-csv')?.addEventListener('click', exportSalesCSV);
+document.querySelector('#export-movement-csv')?.addEventListener('click', exportMovementCSV);
+document.querySelector('#print-reports')?.addEventListener('click', printReports);
 
 (async function initialize() {
   try {

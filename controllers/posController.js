@@ -7,6 +7,39 @@ function makeTransactionNumber() {
   return `TRX-${stamp}-${randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
+async function getTransactionDetail(req, res) {
+  const saleId = requiredPositiveInteger(req.params.id, 'ID penjualan');
+  const [sales] = await pool.execute(
+    `SELECT p.id_penjualan, p.no_transaksi, p.tanggal_penjualan,
+            p.total_bayar, p.metode_pembayaran,
+            k.id_karyawan, k.nama_karyawan,
+            g.id_gudang, g.nama_gudang
+       FROM penjualan p
+       JOIN karyawan k ON k.id_karyawan = p.id_karyawan
+       JOIN gudang g ON g.id_gudang = p.id_gudang
+      WHERE p.id_penjualan = ?`,
+    [saleId]
+  );
+  if (!sales.length) throw httpError(404, 'Data transaksi penjualan tidak ditemukan.');
+
+  const [items] = await pool.execute(
+    `SELECT dp.id_detail_jual, dp.id_produk, pr.nama_produk, pr.barcode,
+            pr.satuan, dp.jumlah, dp.harga_satuan, dp.subtotal
+       FROM detail_penjualan dp
+       JOIN produk pr ON pr.id_produk = dp.id_produk
+      WHERE dp.id_penjualan = ?
+      ORDER BY dp.id_detail_jual ASC`,
+    [saleId]
+  );
+
+  res.json({
+    data: {
+      ...sales[0],
+      items
+    }
+  });
+}
+
 async function checkout(req, res) {
   const warehouseId = requiredPositiveInteger(req.body.warehouseId, 'ID gudang');
   const employeeId = requiredPositiveInteger(req.body.employeeId, 'ID karyawan');
@@ -122,4 +155,4 @@ async function checkout(req, res) {
   }
 }
 
-module.exports = { checkout };
+module.exports = { checkout, getTransactionDetail };

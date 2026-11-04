@@ -29,9 +29,11 @@ File `database/schema.sql` mendefinisikan 14 tabel CDM:
 
 Semua primary key auto-increment dan foreign key menggunakan `BIGINT UNSIGNED`.
 
-### Database Triggers Aktif:
+### Database Triggers & Views Aktif:
 1. `trg_after_insert_detail_penjualan`: Memotong saldo `current_stock` etalase toko secara otomatis setelah item kasir tersimpan dan menolak penjualan jika stok tidak mencukupi (SQLSTATE 45000).
 2. `trg_after_insert_detail_stock_opname`: Menyelaraskan saldo sistem pada `current_stock` agar sama persis dengan angka fisik nyata hasil audit.
+3. `v_ringkasan_stok_kritis`: View pemantauan real-time untuk seluruh item berstatus 'Menipis' dan 'Habis'.
+4. `v_rekap_omzet_harian`: View analitik rekapitulasi omzet dan total transaksi harian minimarket.
 
 ---
 
@@ -58,14 +60,17 @@ Semua primary key auto-increment dan foreign key menggunakan `BIGINT UNSIGNED`.
 | GET | `/api/stock` | Daftar snapshot stok (dukungan filter `?warehouseId=1`) |
 | GET | `/api/stock/summary` | KPI total produk, nilai HPP, stok menipis dan habis |
 | POST | `/api/pos/checkout` | Transaksi kasir POS berprinsip ACID (auto trigger potong stok) |
+| GET | `/api/pos/:id` | Rincian struk transaksi kasir dan daftar item belanja |
 | GET | `/api/purchases` | Riwayat PO pengadaan dan status faktur |
+| GET | `/api/purchases/:id` | Rincian lengkap faktur PO beserta rincian item barang |
 | POST | `/api/purchases` | Pembuatan draf PO pembelian ke supplier |
 | POST | `/api/purchases/:id/receive` | Konfirmasi penerimaan barang pengadaan (tambah stok) |
 | GET | `/api/returns` | Riwayat retur supplier dan pelanggan |
 | GET | `/api/returns/references` | Daftar referensi PO dan struk kasir untuk form retur |
+| GET | `/api/returns/:id` | Rincian transaksi retur barang beserta alasan dan item |
 | POST | `/api/returns` | Transaksi pencatatan retur dan mutasi stok terkait |
 | POST | `/api/opname` | Simpan audit fisik opname (auto trigger sinkronisasi stok) |
-| GET | `/api/reports/sales` | Rekapitulasi omzet penjualan, metode bayar, dan produk terlaris |
+| GET | `/api/reports/sales` | Rekapitulasi omzet penjualan (`?period=all\|30d\|7d`), metode bayar, dan produk terlaris |
 | GET | `/api/reports/stock-movement` | Kartu mutasi stok lengkap (masuk/keluar/opname/saldo akhir) |
 | GET/POST/PUT/DELETE | `/api/masters/products` | CRUD master produk (DELETE menonaktifkan katalog) |
 | GET/POST/PUT/DELETE | `/api/masters/suppliers` | CRUD master supplier pemasok barang |

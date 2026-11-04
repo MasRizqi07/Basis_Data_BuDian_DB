@@ -22,6 +22,39 @@ async function listPurchases(_req, res) {
   res.json({ data: rows });
 }
 
+async function getPurchaseDetail(req, res) {
+  const purchaseId = requiredPositiveInteger(req.params.id, 'ID pembelian');
+  const [purchases] = await pool.execute(
+    `SELECT b.id_pembelian, b.no_faktur, b.tanggal_pembelian,
+            b.status_pembayaran, b.total_harga, s.id_supplier, s.nama_supplier,
+            s.no_telepon AS no_telepon_supplier, s.kontak_person, s.alamat AS alamat_supplier,
+            k.id_karyawan, k.nama_karyawan
+       FROM pembelian b
+       JOIN supplier s ON s.id_supplier = b.id_supplier
+       JOIN karyawan k ON k.id_karyawan = b.id_karyawan
+      WHERE b.id_pembelian = ?`,
+    [purchaseId]
+  );
+  if (!purchases.length) throw httpError(404, 'Data pembelian tidak ditemukan.');
+
+  const [items] = await pool.execute(
+    `SELECT d.id_detail_beli, d.id_produk, p.nama_produk, p.barcode,
+            p.satuan, d.jumlah, d.harga_satuan, d.subtotal
+       FROM detail_pembelian d
+       JOIN produk p ON p.id_produk = d.id_produk
+      WHERE d.id_pembelian = ?
+      ORDER BY d.id_detail_beli ASC`,
+    [purchaseId]
+  );
+
+  res.json({
+    data: {
+      ...purchases[0],
+      items
+    }
+  });
+}
+
 async function createPurchase(req, res) {
   const supplierId = requiredPositiveInteger(req.body.supplierId, 'ID supplier');
   const employeeId = requiredPositiveInteger(req.body.employeeId, 'ID karyawan');
@@ -197,4 +230,4 @@ async function receivePurchase(req, res) {
   }
 }
 
-module.exports = { createPurchase, listPurchases, receivePurchase };
+module.exports = { createPurchase, getPurchaseDetail, listPurchases, receivePurchase };

@@ -28,6 +28,43 @@ async function listReturns(_req, res) {
   res.json({ data: rows });
 }
 
+async function getReturnDetail(req, res) {
+  const returnId = requiredPositiveInteger(req.params.id, 'ID retur');
+  const [returns] = await pool.execute(
+    `SELECT r.id_retur, r.no_retur, r.tanggal_retur, r.jenis_retur,
+            r.total_nilai_retur, r.status_retur,
+            r.id_pembelian, pb.no_faktur,
+            r.id_penjualan, pj.no_transaksi,
+            r.id_gudang, g.nama_gudang,
+            r.id_karyawan, k.nama_karyawan
+       FROM retur r
+       LEFT JOIN pembelian pb ON pb.id_pembelian = r.id_pembelian
+       LEFT JOIN penjualan pj ON pj.id_penjualan = r.id_penjualan
+       JOIN gudang g ON g.id_gudang = r.id_gudang
+       JOIN karyawan k ON k.id_karyawan = r.id_karyawan
+      WHERE r.id_retur = ?`,
+    [returnId]
+  );
+  if (!returns.length) throw httpError(404, 'Data retur tidak ditemukan.');
+
+  const [items] = await pool.execute(
+    `SELECT dr.id_detail_retur, dr.id_produk, p.nama_produk, p.barcode,
+            p.satuan, dr.jumlah_retur, dr.harga_satuan, dr.subtotal, dr.alasan
+       FROM detail_retur dr
+       JOIN produk p ON p.id_produk = dr.id_produk
+      WHERE dr.id_retur = ?
+      ORDER BY dr.id_detail_retur ASC`,
+    [returnId]
+  );
+
+  res.json({
+    data: {
+      ...returns[0],
+      items
+    }
+  });
+}
+
 async function getReturnReferences(_req, res) {
   const [purchases] = await pool.execute(
     `SELECT b.id_pembelian AS id, b.no_faktur AS code,
@@ -109,13 +146,14 @@ async function createReturn(req, res) {
         'SELECT id_penjualan FROM penjualan WHERE id_penjualan = ? FOR UPDATE',
         [saleId]
       );
-      if (!sales.length) throw httpError(400, 'Transaksi penjualan tidak ditemukan.');
+      if (!sales.length) throw httpError(400, 'Faktur transaksi penjualan tidak ditemukan.');
     }
 
-    const productIds = lines.map((l) => l.productId).sort((a, b) => a - b);
+    const productIds = [...new Set(lines.map((l) => l.productId))].sort((a, b) => a - b);
     const placeholders = productIds.map(() => '?').join(',');
+
     const [products] = await connection.execute(
-      `SELECT id_produk, nama_produk, harga_beli, harga_jual, stok_minimum
+      `SELECT id_produk, harga_beli, harga_jual, stok_minimum
          FROM produk
         WHERE aktif = TRUE AND id_produk IN (${placeholders})
         ORDER BY id_produk
@@ -123,48 +161,59 @@ async function createReturn(req, res) {
       productIds
     );
     if (products.length !== productIds.length) {
-      throw httpError(400, 'Satu atau lebih produk tidak ditemukan atau tidak aktif.');
+      throw httpError(400, 'Satu atau lebih produk retur tidak ditemukan atau tidak aktif.');
     }
     const productById = new Map(products.map((p) => [p.id_produk, p]));
 
-    let totalNilai = 0;
-    const processedLines = [];
-
-    for (const line of lines) {
-      const product = productById.get(line.productId);
-      const unitPrice = line.unitPrice ?? (returnType === 'Ke Supplier' ? Number(product.harga_beli) : Number(product.harga_jual));
-      const subtotal = unitPrice * line.quantity;
-      totalNilai += subtotal;
-
+    for (const pid of productIds) {
       await connection.execute(
         `INSERT INTO current_stock
           (id_produk, id_gudang, jumlah_stok, stok_minimum, status_stok)
          VALUES (?, ?, 0, ?, 'Habis')
          ON DUPLICATE KEY UPDATE id_current_stock = id_current_stock`,
-        [line.productId, warehouseId, product.stok_minimum]
+        [pid, warehouseId, productById.get(pid).stok_minimum]
       );
+    }
 
-      const [stocks] = await connection.execute(
-        `SELECT jumlah_stok, stok_minimum
-           FROM current_stock
-          WHERE id_produk = ? AND id_gudang = ?
-          FOR UPDATE`,
-        [line.productId, warehouseId]
-      );
+    const [stocks] = await connection.execute(
+      `SELECT id_produk, jumlah_stok, stok_minimum
+         FROM current_stock
+        WHERE id_gudang = ? AND id_produk IN (${placeholders})
+        ORDER BY id_produk
+        FOR UPDATE`,
+      [warehouseId, ...productIds]
+    );
+    const stockByProduct = new Map(stocks.map((s) => [s.id_produk, s]));
 
-      const currentQty = Number(stocks[0].jumlah_stok);
-      const minStock = Number(stocks[0].stok_minimum);
-
-      let newQty = currentQty;
-      if (returnType === 'Ke Supplier') {
-        if (currentQty < line.quantity) {
-          throw httpError(400, `Stok produk ${product.nama_produk} di gudang (${currentQty}) tidak mencukupi untuk retur ke supplier sejumlah ${line.quantity}.`);
+    if (returnType === 'Ke Supplier') {
+      for (const line of lines) {
+        const current = stockByProduct.get(line.productId);
+        if (!current || Number(current.jumlah_stok) < line.quantity) {
+          throw httpError(400, `Stok produk ID ${line.productId} di gudang tidak mencukupi untuk diretur ke supplier.`);
         }
-        newQty = currentQty - line.quantity;
-      } else {
-        newQty = currentQty + line.quantity;
       }
+    }
 
+    let totalNilai = 0;
+    const processedLines = [];
+
+    for (const line of lines) {
+      const prod = productById.get(line.productId);
+      const stock = stockByProduct.get(line.productId);
+      const currentQty = Number(stock.jumlah_stok);
+      const minStock = Number(stock.stok_minimum);
+
+      const unitPrice =
+        line.unitPrice !== null
+          ? line.unitPrice
+          : returnType === 'Ke Supplier'
+          ? Number(prod.harga_beli)
+          : Number(prod.harga_jual);
+
+      const subtotal = unitPrice * line.quantity;
+      totalNilai += subtotal;
+
+      const newQty = returnType === 'Ke Supplier' ? currentQty - line.quantity : currentQty + line.quantity;
       const newStatus = newQty <= 0 ? 'Habis' : newQty <= minStock ? 'Menipis' : 'Aman';
 
       await connection.execute(
@@ -173,6 +222,8 @@ async function createReturn(req, res) {
           WHERE id_produk = ? AND id_gudang = ?`,
         [newQty, newStatus, line.productId, warehouseId]
       );
+
+      stock.jumlah_stok = newQty;
 
       processedLines.push({
         productId: line.productId,
@@ -230,7 +281,7 @@ async function createReturn(req, res) {
 
 module.exports = {
   createReturn,
+  getReturnDetail,
   getReturnReferences,
   listReturns
 };
-

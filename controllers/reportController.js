@@ -1,12 +1,25 @@
 const pool = require('../config/database');
 
-async function getSalesReport(_req, res) {
+async function getSalesReport(req, res) {
+  const period = req.query.period || 'all';
+  let dateCondition = '';
+  let detailDateCondition = '';
+
+  if (period === '7d') {
+    dateCondition = 'WHERE tanggal_penjualan >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
+    detailDateCondition = 'WHERE pj.tanggal_penjualan >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
+  } else if (period === '30d') {
+    dateCondition = 'WHERE tanggal_penjualan >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
+    detailDateCondition = 'WHERE pj.tanggal_penjualan >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
+  }
+
   const [summaryRows] = await pool.execute(
     `SELECT
        COUNT(*) AS total_transaksi,
        COALESCE(SUM(total_bayar), 0) AS total_omzet,
        COALESCE(AVG(total_bayar), 0) AS rata_rata_transaksi
-     FROM penjualan`
+     FROM penjualan
+     ${dateCondition}`
   );
 
   const [paymentBreakdown] = await pool.execute(
@@ -15,20 +28,20 @@ async function getSalesReport(_req, res) {
        COUNT(*) AS jumlah_transaksi,
        COALESCE(SUM(total_bayar), 0) AS total_nominal
      FROM penjualan
+     ${dateCondition}
      GROUP BY metode_pembayaran
      ORDER BY total_nominal DESC`
   );
 
-  const [dailySales] = await pool.execute(
-    `SELECT
-       DATE_FORMAT(tanggal_penjualan, '%Y-%m-%d') AS tanggal,
-       COUNT(*) AS jumlah_transaksi,
-       COALESCE(SUM(total_bayar), 0) AS total_omzet
-     FROM penjualan
-     GROUP BY DATE_FORMAT(tanggal_penjualan, '%Y-%m-%d')
-     ORDER BY tanggal DESC
-     LIMIT 30`
-  );
+  let dailySalesQuery;
+  if (period === '7d') {
+    dailySalesQuery = `SELECT tanggal, total_transaksi AS jumlah_transaksi, total_omzet FROM v_rekap_omzet_harian WHERE tanggal >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY tanggal DESC LIMIT 7`;
+  } else if (period === '30d') {
+    dailySalesQuery = `SELECT tanggal, total_transaksi AS jumlah_transaksi, total_omzet FROM v_rekap_omzet_harian WHERE tanggal >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) ORDER BY tanggal DESC LIMIT 30`;
+  } else {
+    dailySalesQuery = `SELECT tanggal, total_transaksi AS jumlah_transaksi, total_omzet FROM v_rekap_omzet_harian ORDER BY tanggal DESC LIMIT 30`;
+  }
+  const [dailySales] = await pool.execute(dailySalesQuery);
 
   const [fastMoving] = await pool.execute(
     `SELECT
@@ -40,8 +53,10 @@ async function getSalesReport(_req, res) {
        COALESCE(SUM(dp.jumlah), 0) AS total_terjual,
        COALESCE(SUM(dp.subtotal), 0) AS total_pendapatan
      FROM detail_penjualan dp
+     JOIN penjualan pj ON pj.id_penjualan = dp.id_penjualan
      JOIN produk p ON p.id_produk = dp.id_produk
      JOIN kategori k ON k.id_kategori = p.id_kategori
+     ${detailDateCondition}
      GROUP BY p.id_produk, p.nama_produk, p.barcode, p.satuan, k.nama_kategori
      ORDER BY total_terjual DESC
      LIMIT 10`
@@ -49,6 +64,7 @@ async function getSalesReport(_req, res) {
 
   res.json({
     data: {
+      period,
       summary: summaryRows[0] || { total_transaksi: 0, total_omzet: 0, rata_rata_transaksi: 0 },
       paymentBreakdown,
       dailySales,
@@ -121,4 +137,3 @@ module.exports = {
   getSalesReport,
   getStockMovementReport
 };
-

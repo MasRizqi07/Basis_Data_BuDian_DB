@@ -4,6 +4,7 @@ const { asyncHandler } = require('../utils/http');
 
 const router = express.Router();
 router.get('/', asyncHandler(purchase.listPurchases));
+router.get('/:id', asyncHandler(purchase.getPurchaseDetail));
 router.post('/', asyncHandler(purchase.createPurchase));
 router.post('/:id/receive', asyncHandler(purchase.receivePurchase));
 

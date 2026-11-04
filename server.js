@@ -50,15 +50,19 @@ app.use((error, _req, res, _next) => {
   res.status(status).json({ error: message });
 });
 
-const server = app.listen(port, () => {
-  console.log(`Inventory Minimarket berjalan di http://localhost:${port}`);
-});
-
-async function shutdown() {
-  server.close(async () => {
-    await pool.end();
-    process.exit(0);
+if (require.main === module) {
+  const server = app.listen(port, () => {
+    console.log(`Inventory Minimarket berjalan di http://localhost:${port}`);
   });
+
+  async function shutdown() {
+    server.close(async () => {
+      await pool.end();
+      process.exit(0);
+    });
+  }
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+
+module.exports = app;

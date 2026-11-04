@@ -202,6 +202,11 @@
           <h1>Terminal Kasir & Checkout</h1>
           <p class="muted">Scan barcode / pilih produk, kelola keranjang belanja, kalkulasi kembalian, dan cetak struk.</p>
         </div>
+        <div class="table-action">
+          <button class="button button-secondary" id="toggle-sound" title="Aktif/Nonaktifkan Suara Scanner Kasir">
+            <i data-lucide="volume-2" id="sound-icon"></i> <span id="sound-status-label">Suara: Nyala</span>
+          </button>
+        </div>
       </div>
 
       <div class="split-grid">
@@ -335,7 +340,7 @@
                 <th>JUMLAH ITEM</th>
                 <th>TOTAL HARGA</th>
                 <th>STATUS PO</th>
-                <th>AKSI PENERIMAAN</th>
+                <th>AKSI</th>
               </tr>
             </thead>
             <tbody id="purchase-table">
@@ -383,10 +388,11 @@
                 <th>PENANGGUNG JAWAB</th>
                 <th>TOTAL NILAI RETUR</th>
                 <th>STATUS</th>
+                <th>AKSI</th>
               </tr>
             </thead>
             <tbody id="return-table">
-              <tr><td colspan="8" class="empty-state">Memuat riwayat transaksi retur...</td></tr>
+              <tr><td colspan="9" class="empty-state">Memuat riwayat transaksi retur...</td></tr>
             </tbody>
           </table>
         </div>
@@ -461,6 +467,11 @@
           <p class="eyebrow">INTELIJEN BISNIS & AUDIT</p>
           <h1>Laporan & Analitik Komprehensif</h1>
           <p class="muted">Visualisasi tren penjualan harian, sebaran metode pembayaran, produk terlaris, dan kartu mutasi stok.</p>
+          <div class="category-chips" id="report-period-chips" style="margin-top: 14px; margin-bottom: 0;">
+            <button class="chip active" data-period="all">Semua Waktu</button>
+            <button class="chip" data-period="30d">30 Hari Terakhir</button>
+            <button class="chip" data-period="7d">7 Hari Terakhir</button>
+          </div>
         </div>
         <div class="table-action">
           <button class="button button-secondary" id="export-sales-csv" title="Unduh CSV Penjualan"><i data-lucide="download"></i> CSV Penjualan</button>

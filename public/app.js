@@ -15,6 +15,7 @@ const state = {
   reports: { sales: null, movement: [] },
   cart: new Map(),
   selectedPosCategory: '',
+  selectedReportPeriod: 'all',
   charts: {
     salesTrend: null,
     paymentBreakdown: null
@@ -34,6 +35,84 @@ const rupiah = (value) => new Intl.NumberFormat('id-ID', {
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[char]));
+
+// Web Audio API Sound Synthesizer (Zero External Dependencies)
+const sound = {
+  enabled: localStorage.getItem('pos_sound_enabled') !== 'false',
+  ctx: null,
+
+  init() {
+    if (!this.ctx && (window.AudioContext || window.webkitAudioContext)) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+  },
+
+  play(frequencies, type = 'sine', duration = 0.1, delay = 0) {
+    if (!this.enabled) return;
+    try {
+      this.init();
+      if (!this.ctx) return;
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume();
+      }
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const startTime = this.ctx.currentTime + delay;
+      
+      osc.type = type;
+      if (Array.isArray(frequencies)) {
+        osc.frequency.setValueAtTime(frequencies[0], startTime);
+        if (frequencies[1]) {
+          osc.frequency.exponentialRampToValueAtTime(frequencies[1], startTime + duration);
+        }
+      } else {
+        osc.frequency.setValueAtTime(frequencies, startTime);
+      }
+
+      gain.gain.setValueAtTime(0.15, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    } catch (_) {}
+  },
+
+  scan() {
+    // Crisp high-frequency barcode scanner beep (1800 Hz, 70ms)
+    this.play(1800, 'sine', 0.07);
+  },
+
+  success() {
+    // Pleasant melodic two-tone chime for transaction success (C6 -> A6)
+    this.play(1046.5, 'sine', 0.12, 0);
+    this.play(1760, 'sine', 0.18, 0.08);
+  },
+
+  error() {
+    // Low frequency alert buzz for out of stock or rejection (sawtooth wave)
+    this.play([220, 110], 'sawtooth', 0.22);
+  },
+
+  toggle() {
+    this.enabled = !this.enabled;
+    localStorage.setItem('pos_sound_enabled', this.enabled ? 'true' : 'false');
+    this.updateUI();
+    return this.enabled;
+  },
+
+  updateUI() {
+    const label = document.querySelector('#sound-status-label');
+    const btn = document.querySelector('#toggle-sound');
+    if (label) label.textContent = this.enabled ? 'Suara: Nyala' : 'Suara: Senyap';
+    if (btn) {
+      btn.innerHTML = `<i data-lucide="${this.enabled ? 'volume-2' : 'volume-x'}"></i> <span id="sound-status-label">${this.enabled ? 'Suara: Nyala' : 'Suara: Senyap'}</span>`;
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }
+};
 
 async function api(url, options = {}) {
   const response = await fetch(url, {
@@ -101,28 +180,34 @@ async function loadReferences() {
 }
 
 // ============================================================================
-// TAB 1: Dashboard Stok
+// TAB 1: Dashboard & Monitoring Stok Real-Time
 // ============================================================================
 
 async function loadDashboard() {
   const warehouse = document.querySelector('#warehouse-filter')?.value || '';
-  const [summary, rows] = await Promise.all([
-    api(`/api/stock/summary${warehouse ? `?warehouseId=${encodeURIComponent(warehouse)}` : ''}`),
-    api(`/api/stock${warehouse ? `?warehouseId=${encodeURIComponent(warehouse)}` : ''}`)
+  const query = warehouse ? `?warehouseId=${encodeURIComponent(warehouse)}` : '';
+  const [summary, stock] = await Promise.all([
+    api(`/api/stock/summary${query}`),
+    api(`/api/stock${query}`)
   ]);
-  state.stock = rows;
-  document.querySelector('#kpi-products').textContent = Number(summary.total_produk).toLocaleString('id-ID');
+
+  document.querySelector('#kpi-products').textContent = Number(summary.total_produk || 0).toLocaleString('id-ID');
   document.querySelector('#kpi-value').textContent = rupiah(summary.total_nilai_stok);
-  document.querySelector('#kpi-low').textContent = Number(summary.item_menipis).toLocaleString('id-ID');
-  document.querySelector('#kpi-empty').textContent = Number(summary.item_habis).toLocaleString('id-ID');
+  document.querySelector('#kpi-low').textContent = Number(summary.item_menipis || 0).toLocaleString('id-ID');
+  document.querySelector('#kpi-empty').textContent = Number(summary.item_habis || 0).toLocaleString('id-ID');
+
+  state.stock = stock;
   renderStock();
 }
 
 function renderStock() {
   const term = document.querySelector('#stock-search')?.value.toLowerCase().trim() || '';
   const rows = state.stock.filter((item) =>
-    item.nama_produk.toLowerCase().includes(term) || item.kode_barcode.toLowerCase().includes(term)
+    item.nama_produk.toLowerCase().includes(term) ||
+    item.kode_barcode.toLowerCase().includes(term) ||
+    item.nama_gudang.toLowerCase().includes(term)
   );
+
   const tbody = document.querySelector('#stock-table');
   if (!tbody) return;
 
@@ -133,70 +218,79 @@ function renderStock() {
           <span class="product-thumb"><i data-lucide="package"></i></span>
           <div>
             <b>${escapeHtml(item.nama_produk)}</b>
-            <small>${escapeHtml(item.satuan)} · Ambang batas min. ${item.stok_minimum}</small>
+            <small>Kode: ${escapeHtml(item.kode_barcode)}</small>
           </div>
         </div>
       </td>
       <td><span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(item.kode_barcode)}</span></td>
       <td>${escapeHtml(item.nama_gudang)}</td>
-      <td><span class="stock-number">${item.jumlah_stok}</span> ${escapeHtml(item.satuan)}</td>
+      <td><span class="stock-number">${item.jumlah_stok}</span> <span style="font-size:11px;color:var(--text-muted)">${escapeHtml(item.satuan)}</span></td>
+      <td>${item.stok_minimum} ${escapeHtml(item.satuan)}</td>
+      <td>${rupiah(item.harga_beli)}</td>
+      <td><b>${rupiah(item.harga_jual)}</b></td>
       <td>${statusBadge(item.status_stok)}</td>
-      <td><span style="font-size:11px;color:var(--text-muted)">${new Date(item.tanggal_update_terakhir).toLocaleString('id-ID')}</span></td>
-    </tr>`).join('') : '<tr><td colspan="6" class="empty-state">Produk tidak ditemukan dalam pencarian.</td></tr>';
-  
-  const countElem = document.querySelector('#stock-count');
-  if (countElem) countElem.textContent = `${rows.length} produk ditampilkan`;
+      <td><small style="color:var(--text-muted)">${new Date(item.tanggal_update_terakhir).toLocaleString('id-ID')}</small></td>
+    </tr>
+  `).join('') : '<tr><td colspan="9" class="empty-state">Tidak ada snapshot stok yang cocok dengan kriteria pencarian.</td></tr>';
+
+  document.querySelector('#stock-count').textContent = `${rows.length} dari ${state.stock.length} data stok ditampilkan`;
   if (window.lucide) window.lucide.createIcons();
 }
 
 // ============================================================================
-// TAB 2: Kasir / Point of Sale (POS)
+// TAB 2: Point of Sale (POS Terminal & Checkout)
 // ============================================================================
 
 async function loadPosStock() {
-  const warehouseId = document.querySelector('#pos-warehouse')?.value;
-  state.posStock = warehouseId
-    ? await api(`/api/stock?warehouseId=${encodeURIComponent(warehouseId)}`)
-    : [];
+  const warehouse = document.querySelector('#pos-warehouse')?.value || 1;
+  state.posStock = await api(`/api/stock?warehouseId=${encodeURIComponent(warehouse)}`);
   renderPosProducts();
-  renderCart();
 }
 
 function availableStock(productId) {
-  return Number(state.posStock.find((item) => item.id_produk === productId)?.jumlah_stok || 0);
+  const match = state.posStock.find((item) => item.id_produk === productId);
+  return match ? Number(match.jumlah_stok) : 0;
 }
 
 function renderPosProducts() {
   const term = document.querySelector('#pos-search')?.value.toLowerCase().trim() || '';
-  const categoryFilter = state.selectedPosCategory;
+  const categoryFilter = state.selectedPosCategory || '';
 
-  const rows = state.products.filter((item) => {
+  const filtered = state.products.filter((item) => {
     if (!item.aktif) return false;
     const matchCategory = !categoryFilter || item.nama_kategori === categoryFilter;
-    const matchTerm = !term || item.nama_produk.toLowerCase().includes(term) || item.kode_barcode.toLowerCase().includes(term);
+    const matchTerm = !term ||
+      item.nama_produk.toLowerCase().includes(term) ||
+      item.kode_barcode.toLowerCase().includes(term) ||
+      (item.barcode && item.barcode.toLowerCase().includes(term));
     return matchCategory && matchTerm;
   });
 
   const container = document.querySelector('#pos-product-list');
   if (!container) return;
 
-  container.innerHTML = rows.map((item) => {
-    const stockQty = availableStock(item.id_produk);
-    const isOut = stockQty <= 0;
+  container.innerHTML = filtered.length ? filtered.map((item) => {
+    const stock = availableStock(item.id_produk);
+    const inCart = state.cart.get(item.id_produk) || 0;
+    const isOutOfStock = stock <= 0;
     return `
-      <div class="product-option">
-        <span class="product-thumb"><i data-lucide="package"></i></span>
+      <div class="product-option ${isOutOfStock ? 'out-of-stock' : ''}">
+        <span class="product-thumb"><i data-lucide="shopping-bag"></i></span>
         <div>
           <b>${escapeHtml(item.nama_produk)}</b>
-          <small><span style="font-family:var(--font-mono)">${escapeHtml(item.kode_barcode)}</span> · Tersedia <b>${stockQty}</b> ${escapeHtml(item.satuan)}</small>
+          <small><span class="badge neutral">${escapeHtml(item.nama_kategori)}</span> · Barcode: ${escapeHtml(item.kode_barcode)}</small>
         </div>
-        <strong>${rupiah(item.harga_jual)}</strong>
-        <button class="mini-add" data-add-cart="${item.id_produk}" aria-label="Tambah ${escapeHtml(item.nama_produk)}" ${isOut ? 'disabled title="Stok habis"' : 'title="Tambah ke keranjang"'}>
-          <i data-lucide="plus"></i>
+        <div class="product-option-meta">
+          <strong>${rupiah(item.harga_jual)}</strong>
+          <small class="muted">Tersedia: <b>${stock}</b> ${escapeHtml(item.satuan)}</small>
+        </div>
+        <button class="button ${inCart > 0 ? 'button-secondary' : 'button-primary'} compact"
+          data-add-cart="${item.id_produk}" ${isOutOfStock || inCart >= stock ? 'disabled' : ''}>
+          ${isOutOfStock ? 'Habis' : inCart > 0 ? `+1 (Ada ${inCart})` : '+ Tambah'}
         </button>
       </div>
     `;
-  }).join('') || '<div class="empty-state">Tidak ada produk yang cocok dengan pencarian/kategori ini.</div>';
+  }).join('') : '<div class="empty-state">Tidak ada produk aktif yang cocok dengan filter.</div>';
 
   container.querySelectorAll('[data-add-cart]').forEach((button) => {
     button.addEventListener('click', () => changeCart(Number(button.dataset.addCart), 1));
@@ -213,12 +307,14 @@ function changeCart(id, delta) {
   const maxStock = availableStock(id);
 
   if (quantity > maxStock) {
+    sound.error();
     return toast(`Stok tidak mencukupi! Hanya tersedia ${maxStock} ${product.satuan}.`, true);
   }
   if (quantity <= 0) {
     state.cart.delete(id);
   } else {
     state.cart.set(id, quantity);
+    if (delta > 0) sound.scan();
   }
   renderCart();
   renderPosProducts();
@@ -312,13 +408,17 @@ function renderCart() {
 
 async function checkout() {
   const items = [...state.cart.entries()].map(([productId, quantity]) => ({ productId, quantity }));
-  if (!items.length) return toast('Tambahkan produk ke keranjang terlebih dahulu.', true);
+  if (!items.length) {
+    sound.error();
+    return toast('Tambahkan produk ke keranjang terlebih dahulu.', true);
+  }
 
   const paymentMethod = document.querySelector('#payment-method').value;
   const total = calculateCartTotal();
   const cashInput = Number(document.querySelector('#pos-cash-input')?.value || 0);
 
   if (paymentMethod === 'Tunai' && cashInput > 0 && cashInput < total) {
+    sound.error();
     return toast(`Nominal uang tunai kurang ${rupiah(total - cashInput)}!`, true);
   }
 
@@ -342,6 +442,7 @@ async function checkout() {
     renderCart();
 
     await Promise.all([loadDashboard(), loadProducts(), loadPosStock(), loadOpnameStock()]);
+    sound.success();
     showReceipt({
       ...receipt,
       cashReceived: paymentMethod === 'Tunai' && cashInput > 0 ? cashInput : total,
@@ -349,6 +450,7 @@ async function checkout() {
     });
     toast('Transaksi berhasil dicatat dan saldo stok diperbarui.');
   } catch (error) {
+    sound.error();
     toast(error.message, true);
   } finally {
     const checkoutButton = document.querySelector('#checkout-button');
@@ -361,7 +463,7 @@ async function checkout() {
 function showReceipt(receipt) {
   const details = receipt.items.map((item) => `
     <div class="receipt-item-row">
-      <span>${escapeHtml(item.name)} × ${item.quantity}</span>
+      <span>${escapeHtml(item.name || item.nama_produk)} × ${item.quantity || item.jumlah}</span>
       <b>${rupiah(item.subtotal)}</b>
     </div>
   `).join('');
@@ -378,25 +480,27 @@ function showReceipt(receipt) {
       <div class="receipt-header">
         <h3>URBAN MART MINIMARKET</h3>
         <p>Jl. Merdeka No. 45, Jakarta Pusat · Telp: 021-5550101</p>
-        <p style="margin-top:6px">Faktur: <b>${escapeHtml(receipt.receiptNumber)}</b></p>
-        <p>Waktu: ${new Date().toLocaleString('id-ID')} · Metode: <b>${escapeHtml(receipt.paymentMethod)}</b></p>
+        <p>No: <b>${escapeHtml(receipt.receiptNumber || receipt.no_transaksi)}</b> · ${new Date().toLocaleString('id-ID')}</p>
       </div>
-      <hr class="receipt-divider">
-      ${details}
-      <hr class="receipt-divider">
-      <div class="receipt-total-row">
-        <span>TOTAL BELANJA</span>
-        <b>${rupiah(receipt.total)}</b>
+      <div style="border-top:1px dashed #d6d3d1;border-bottom:1px dashed #d6d3d1;padding:8px 0;margin:8px 0">
+        ${details}
       </div>
-      <div class="receipt-item-row" style="margin-top:6px">
-        <span>Bayar (${escapeHtml(receipt.paymentMethod)})</span>
+      <div class="receipt-summary-row">
+        <span>TOTAL TAGIHAN:</span>
+        <b style="font-size:13px">${rupiah(receipt.total || receipt.total_bayar)}</b>
+      </div>
+      <div class="receipt-summary-row" style="font-size:11px">
+        <span>Metode Pembayaran:</span>
+        <b>${escapeHtml(receipt.paymentMethod || receipt.metode_pembayaran)}</b>
+      </div>
+      <div class="receipt-summary-row" style="font-size:11px">
+        <span>Uang Diterima:</span>
         <span>${rupiah(cashReceived)}</span>
       </div>
-      <div class="receipt-item-row">
-        <span>Kembalian</span>
+      <div class="receipt-summary-row" style="font-size:11px">
+        <span>Kembalian:</span>
         <b>${rupiah(change)}</b>
       </div>
-      <hr class="receipt-divider">
       <div style="text-align:center;font-size:10px;color:#78716c;margin-top:10px">
         Terima kasih telah berbelanja di Urban Mart!<br>
         Barang yang sudah dibeli dapat ditukar maksimal 1x24 jam dengan struk fisik.
@@ -418,9 +522,9 @@ function printReceipt(receipt) {
   const printWindow = window.open('', '_blank', 'width=420,height=680');
   if (!printWindow) return toast('Izinkan pop-up browser untuk mencetak struk.', true);
 
-  const rows = receipt.items.map((item) => `
+  const rows = (receipt.items || []).map((item) => `
     <tr>
-      <td style="padding:4px 0">${escapeHtml(item.name)} × ${item.quantity}</td>
+      <td style="padding:4px 0">${escapeHtml(item.name || item.nama_produk)} × ${item.quantity || item.jumlah}</td>
       <td style="text-align:right;white-space:nowrap">${rupiah(item.subtotal)}</td>
     </tr>
   `).join('');
@@ -430,7 +534,7 @@ function printReceipt(receipt) {
     <html lang="id">
     <head>
       <meta charset="utf-8">
-      <title>Struk ${escapeHtml(receipt.receiptNumber)}</title>
+      <title>Struk ${escapeHtml(receipt.receiptNumber || receipt.no_transaksi)}</title>
       <style>
         body { font-family: monospace; font-size: 13px; max-width: 340px; margin: 20px auto; color: #111; line-height: 1.4; }
         .center { text-align: center; }
@@ -446,18 +550,18 @@ function printReceipt(receipt) {
       <div class="center">
         <h1>URBAN MART</h1>
         <p>Jl. Merdeka No. 45, Jakarta · Telp 021-5550101</p>
-        <p>No: ${escapeHtml(receipt.receiptNumber)}<br>${new Date().toLocaleString('id-ID')}</p>
+        <p>No: ${escapeHtml(receipt.receiptNumber || receipt.no_transaksi)}<br>${new Date().toLocaleString('id-ID')}</p>
       </div>
       <hr>
       <table>${rows}</table>
       <hr>
       <div class="total">
         <span>TOTAL:</span>
-        <span>${rupiah(receipt.total)}</span>
+        <span>${rupiah(receipt.total || receipt.total_bayar)}</span>
       </div>
       <div class="row">
-        <span>Bayar (${escapeHtml(receipt.paymentMethod)}):</span>
-        <span>${rupiah(receipt.cashReceived || receipt.total)}</span>
+        <span>Bayar (${escapeHtml(receipt.paymentMethod || receipt.metode_pembayaran)}):</span>
+        <span>${rupiah(receipt.cashReceived || receipt.total || receipt.total_bayar)}</span>
       </div>
       <div class="row">
         <span>Kembalian:</span>
@@ -476,12 +580,12 @@ function printReceipt(receipt) {
 // Modal System (Accessible & Clean)
 // ============================================================================
 
-function openModal(content) {
+function openModal(content, isWide = false) {
   closeModal();
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
   backdrop.id = 'active-modal';
-  backdrop.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${content}</div>`;
+  backdrop.innerHTML = `<div class="modal ${isWide ? 'modal-lg' : ''}" role="dialog" aria-modal="true">${content}</div>`;
   backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeModal(); });
   document.body.append(backdrop);
 }
@@ -512,9 +616,16 @@ async function loadPurchases() {
 
   tbody.innerHTML = rows.length ? rows.map((item) => {
     const isReceived = item.status_pembayaran === 'Diterima';
-    const actionCell = isReceived
-      ? '<span class="badge safe"><i data-lucide="check"></i> Stok Diterima</span>'
-      : `<button class="action-button" data-receive-purchase="${item.id_pembelian}"><i data-lucide="package-check"></i> Terima Barang</button>`;
+    const actionCell = `
+      <div class="table-action">
+        <button class="action-button secondary" data-view-purchase="${item.id_pembelian}" title="Lihat Rincian Faktur PO">
+          <i data-lucide="eye"></i> Detail
+        </button>
+        ${isReceived
+          ? '<span class="badge safe"><i data-lucide="check"></i> Diterima</span>'
+          : `<button class="action-button" data-receive-purchase="${item.id_pembelian}"><i data-lucide="package-check"></i> Terima</button>`}
+      </div>
+    `;
     
     return `
       <tr>
@@ -529,6 +640,10 @@ async function loadPurchases() {
       </tr>
     `;
   }).join('') : '<tr><td colspan="8" class="empty-state">Belum ada riwayat Purchase Order.</td></tr>';
+
+  tbody.querySelectorAll('[data-view-purchase]').forEach((button) => {
+    button.addEventListener('click', () => openPurchaseDetailModal(Number(button.dataset.viewPurchase)));
+  });
 
   tbody.querySelectorAll('[data-receive-purchase]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -548,6 +663,102 @@ async function loadPurchases() {
   });
 
   if (window.lucide) window.lucide.createIcons();
+}
+
+async function openPurchaseDetailModal(purchaseId) {
+  try {
+    const data = await api(`/api/purchases/${purchaseId}`);
+    const isReceived = data.status_pembayaran === 'Diterima';
+    const itemsRows = data.items.map((item, idx) => `
+      <tr>
+        <td style="color:var(--text-muted)">${idx + 1}</td>
+        <td><b>${escapeHtml(item.nama_produk)}</b><br><small style="font-family:var(--font-mono);color:var(--text-muted)">${escapeHtml(item.barcode)}</small></td>
+        <td><b>${item.jumlah}</b> ${escapeHtml(item.satuan)}</td>
+        <td>${rupiah(item.harga_satuan)}</td>
+        <td style="text-align:right"><b>${rupiah(item.subtotal)}</b></td>
+      </tr>
+    `).join('');
+
+    openModal(`
+      <div class="modal-header">
+        <div>
+          <h2>Detail Faktur Pengadaan (PO)</h2>
+          <p class="muted" style="margin:2px 0 0 0">Nomor Faktur: <b style="font-family:var(--font-mono);color:var(--indigo-600)">${escapeHtml(data.no_faktur)}</b></p>
+        </div>
+        <button class="modal-close" id="modal-close-btn" aria-label="Tutup"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="detail-card-grid">
+        <div class="detail-info-item">
+          <span class="detail-label">Supplier / Pemasok</span>
+          <span class="detail-val">${escapeHtml(data.nama_supplier)}</span>
+          <small style="color:var(--text-muted)">PIC: ${escapeHtml(data.kontak_person || '—')} · Telp: ${escapeHtml(data.no_telepon_supplier || '—')}</small>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Status Penerimaan</span>
+          <span class="detail-val"><span class="badge ${isReceived ? 'safe' : 'low'}">${escapeHtml(data.status_pembayaran)}</span></span>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Tanggal Terbit PO</span>
+          <span class="detail-val">${new Date(data.tanggal_pembelian).toLocaleString('id-ID')}</span>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Petugas Purchasing</span>
+          <span class="detail-val">${escapeHtml(data.nama_karyawan)}</span>
+        </div>
+      </div>
+
+      <label style="margin-bottom:8px">Rincian Barang yang Dipesan (${data.items.length} item):</label>
+      <div class="detail-items-table-wrap">
+        <table class="detail-items-table">
+          <thead>
+            <tr>
+              <th style="width:30px">NO</th>
+              <th>PRODUK</th>
+              <th>KUANTITAS</th>
+              <th>HARGA SATUAN</th>
+              <th style="text-align:right">SUBTOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRows}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="detail-total-box">
+        <span>Total Nilai Faktur Pengadaan:</span>
+        <strong>${rupiah(data.total_harga)}</strong>
+      </div>
+
+      <div class="modal-actions">
+        ${!isReceived ? `<button class="button button-primary" id="modal-receive-btn"><i data-lucide="package-check"></i> Konfirmasi Terima Barang</button>` : ''}
+        <button class="button button-secondary" id="modal-close-action">Tutup</button>
+      </div>
+    `, true);
+
+    document.querySelector('#modal-close-btn')?.addEventListener('click', closeModal);
+    document.querySelector('#modal-close-action')?.addEventListener('click', closeModal);
+
+    document.querySelector('#modal-receive-btn')?.addEventListener('click', async () => {
+      if (!confirm('Konfirmasi penerimaan barang untuk PO ini? Saldo stok gudang akan otomatis bertambah.')) return;
+      try {
+        const res = await api(`/api/purchases/${purchaseId}/receive`, {
+          method: 'POST',
+          body: JSON.stringify({ warehouseId: 1 })
+        });
+        closeModal();
+        toast(`Barang faktur ${res.invoiceNumber} berhasil diterima dan ditambahkan ke stok.`);
+        await Promise.all([loadPurchases(), loadDashboard(), loadProducts(), loadPosStock(), loadOpnameStock()]);
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 function openPurchaseModal() {
@@ -660,10 +871,103 @@ function renderReturns() {
         <td>${escapeHtml(item.nama_karyawan)}</td>
         <td><b>${rupiah(item.total_nilai_retur)}</b></td>
         <td><span class="badge safe">${escapeHtml(item.status_retur)}</span></td>
+        <td>
+          <button class="action-button secondary" data-view-return="${item.id_retur}" title="Lihat Rincian Retur">
+            <i data-lucide="eye"></i> Detail
+          </button>
+        </td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="8" class="empty-state">Belum ada riwayat transaksi retur.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="empty-state">Belum ada riwayat transaksi retur.</td></tr>';
+
+  tbody.querySelectorAll('[data-view-return]').forEach((button) => {
+    button.addEventListener('click', () => openReturnDetailModal(Number(button.dataset.viewReturn)));
+  });
+
   if (window.lucide) window.lucide.createIcons();
+}
+
+async function openReturnDetailModal(returnId) {
+  try {
+    const data = await api(`/api/returns/${returnId}`);
+    const isSupplier = data.jenis_retur === 'Ke Supplier';
+    const refCode = data.no_faktur || data.no_transaksi || '—';
+
+    const itemsRows = data.items.map((item, idx) => `
+      <tr>
+        <td style="color:var(--text-muted)">${idx + 1}</td>
+        <td><b>${escapeHtml(item.nama_produk)}</b><br><small style="font-family:var(--font-mono);color:var(--text-muted)">${escapeHtml(item.barcode)}</small></td>
+        <td><span class="badge ${item.alasan === 'Rusak' ? 'out' : item.alasan === 'Kadaluarsa' ? 'low' : 'neutral'}">${escapeHtml(item.alasan)}</span></td>
+        <td><b>${item.jumlah_retur}</b> ${escapeHtml(item.satuan)}</td>
+        <td>${rupiah(item.harga_satuan)}</td>
+        <td style="text-align:right"><b>${rupiah(item.subtotal)}</b></td>
+      </tr>
+    `).join('');
+
+    openModal(`
+      <div class="modal-header">
+        <div>
+          <h2>Detail Transaksi Retur Barang</h2>
+          <p class="muted" style="margin:2px 0 0 0">Nomor Retur: <b style="font-family:var(--font-mono);color:var(--indigo-600)">${escapeHtml(data.no_retur)}</b></p>
+        </div>
+        <button class="modal-close" id="modal-close-btn" aria-label="Tutup"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="detail-card-grid">
+        <div class="detail-info-item">
+          <span class="detail-label">Jenis Retur</span>
+          <span class="detail-val"><span class="badge ${isSupplier ? 'low' : 'safe'}">${escapeHtml(data.jenis_retur)}</span></span>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Dokumen Referensi Asal</span>
+          <span class="detail-val" style="font-family:var(--font-mono)">${escapeHtml(refCode)}</span>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Tanggal Transaksi Retur</span>
+          <span class="detail-val">${new Date(data.tanggal_retur).toLocaleString('id-ID')}</span>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Gudang & Penanggung Jawab</span>
+          <span class="detail-val">${escapeHtml(data.nama_gudang)} (${escapeHtml(data.nama_karyawan)})</span>
+        </div>
+      </div>
+
+      <label style="margin-bottom:8px">Rincian Barang yang Diretur (${data.items.length} item):</label>
+      <div class="detail-items-table-wrap">
+        <table class="detail-items-table">
+          <thead>
+            <tr>
+              <th style="width:30px">NO</th>
+              <th>PRODUK</th>
+              <th>ALASAN</th>
+              <th>KUANTITAS</th>
+              <th>HARGA SATUAN</th>
+              <th style="text-align:right">SUBTOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRows}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="detail-total-box">
+        <span>Total Nilai Retur:</span>
+        <strong>${rupiah(data.total_nilai_retur)}</strong>
+      </div>
+
+      <div class="modal-actions">
+        <button class="button button-secondary" id="modal-close-action">Tutup</button>
+      </div>
+    `, true);
+
+    document.querySelector('#modal-close-btn')?.addEventListener('click', closeModal);
+    document.querySelector('#modal-close-action')?.addEventListener('click', closeModal);
+
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 async function openReturnModal() {
@@ -769,11 +1073,8 @@ async function openReturnModal() {
       reason: row.querySelector('.return-reason').value
     }));
 
-    if (!items.length) return toast('Tambahkan minimal satu item barang untuk retur.', true);
-    if (!values.referenceId) return toast('Pilih dokumen referensi asal retur.', true);
-
     try {
-      const res = await api('/api/returns', {
+      await api('/api/returns', {
         method: 'POST',
         body: JSON.stringify({
           returnType: values.returnType,
@@ -784,25 +1085,21 @@ async function openReturnModal() {
         })
       });
       closeModal();
-      toast(`Retur ${res.returnNumber} berhasil diproses dan saldo stok disesuaikan.`);
+      toast('Transaksi retur berhasil disimpan dan stok disinkronkan.');
       await Promise.all([loadReturns(), loadDashboard(), loadProducts(), loadPosStock(), loadOpnameStock()]);
-    } catch (err) {
-      toast(err.message, true);
-    }
+    } catch (err) { toast(err.message, true); }
   });
 
   if (window.lucide) window.lucide.createIcons();
 }
 
 // ============================================================================
-// TAB 5: Stock Opname (Audit Fisik)
+// TAB 5: Stock Opname (Audit Fisik vs Sistem)
 // ============================================================================
 
 async function loadOpnameStock() {
-  const warehouseId = document.querySelector('#opname-warehouse')?.value;
-  state.opnameStock = warehouseId
-    ? await api(`/api/stock?warehouseId=${encodeURIComponent(warehouseId)}`)
-    : [];
+  const warehouse = document.querySelector('#opname-warehouse')?.value || 1;
+  state.opnameStock = await api(`/api/stock?warehouseId=${encodeURIComponent(warehouse)}`);
   renderOpnameRows();
 }
 
@@ -811,31 +1108,50 @@ function renderOpnameRows() {
   if (!tbody) return;
 
   tbody.innerHTML = state.opnameStock.length ? state.opnameStock.map((item) => `
-    <tr data-opname-row="${item.id_produk}">
+    <tr>
       <td>
         <div class="product-cell">
           <span class="product-thumb"><i data-lucide="package"></i></span>
           <div>
             <b>${escapeHtml(item.nama_produk)}</b>
-            <small>${escapeHtml(item.kode_barcode)} · Satuan: ${escapeHtml(item.satuan)}</small>
+            <small>Barcode: ${escapeHtml(item.kode_barcode)}</small>
           </div>
         </div>
       </td>
       <td><b>${item.jumlah_stok}</b> ${escapeHtml(item.satuan)}</td>
       <td>
-        <input class="input-control physical-count" type="number" min="0" step="1" placeholder="Masukkan fisik..." data-product-id="${item.id_produk}" data-system="${item.jumlah_stok}">
+        <input class="physical-count input-control" type="number" min="0" placeholder="Hitung fisik..."
+          data-product-id="${item.id_produk}" data-system="${item.jumlah_stok}" style="width:130px">
       </td>
-      <td class="difference zero" data-difference-for="${item.id_produk}">—</td>
+      <td>
+        <span class="difference zero" id="diff-${item.id_produk}">0 (Belum diisi)</span>
+      </td>
     </tr>
-  `).join('') : '<tr><td colspan="4" class="empty-state">Tidak ada data stok di gudang ini untuk diaudit.</td></tr>';
+  `).join('') : '<tr><td colspan="4" class="empty-state">Data snapshot stok untuk gudang ini kosong.</td></tr>';
 
   tbody.querySelectorAll('.physical-count').forEach((input) => {
     input.addEventListener('input', () => {
-      const difference = input.value === '' ? null : Number(input.value) - Number(input.dataset.system);
-      const cell = document.querySelector(`[data-difference-for="${input.dataset.productId}"]`);
-      if (cell) {
-        cell.textContent = difference === null ? '—' : `${difference > 0 ? '+' : ''}${difference}`;
-        cell.className = `difference ${difference === null || difference === 0 ? 'zero' : difference > 0 ? 'positive' : 'negative'}`;
+      const system = Number(input.dataset.system);
+      const val = input.value === '' ? null : Number(input.value);
+      const cell = document.querySelector(`#diff-${input.dataset.productId}`);
+      if (!cell) return;
+
+      if (val === null) {
+        cell.textContent = '0 (Belum diisi)';
+        cell.className = 'difference zero';
+        return;
+      }
+
+      const diff = val - system;
+      if (diff > 0) {
+        cell.textContent = `+${diff} (Surplus)`;
+        cell.className = 'difference positive';
+      } else if (diff < 0) {
+        cell.textContent = `${diff} (Selisih Kurang)`;
+        cell.className = 'difference negative';
+      } else {
+        cell.textContent = '0 (Sesuai)';
+        cell.className = 'difference zero';
       }
     });
   });
@@ -846,7 +1162,7 @@ function renderOpnameRows() {
 function prefillOpnameWithSystem() {
   document.querySelectorAll('.physical-count').forEach((input) => {
     input.value = input.dataset.system;
-    const cell = document.querySelector(`[data-difference-for="${input.dataset.productId}"]`);
+    const cell = document.querySelector(`#diff-${input.dataset.productId}`);
     if (cell) {
       cell.textContent = '0 (Sesuai)';
       cell.className = 'difference zero';
@@ -882,10 +1198,14 @@ async function saveOpname() {
 // TAB 6: Laporan & Analitik (Chart.js Integration)
 // ============================================================================
 
-async function loadReports() {
+async function loadReports(period = null) {
+  if (period) {
+    state.selectedReportPeriod = period;
+  }
+  const currentPeriod = state.selectedReportPeriod || 'all';
   const warehouse = document.querySelector('#movement-warehouse-filter')?.value || '';
   const [salesData, movementRows] = await Promise.all([
-    api('/api/reports/sales'),
+    api(`/api/reports/sales?period=${encodeURIComponent(currentPeriod)}`),
     api(`/api/reports/stock-movement${warehouse ? `?warehouseId=${encodeURIComponent(warehouse)}` : ''}`)
   ]);
 
@@ -919,7 +1239,7 @@ async function loadReports() {
         <td><b>${rupiah(item.total_pendapatan)}</b></td>
       </tr>
     `;
-  }).join('') : '<tr><td colspan="6" class="empty-state">Belum ada transaksi penjualan produk.</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="empty-state">Belum ada transaksi penjualan produk pada periode ini.</td></tr>';
 
   // Stock Movement Audit Matrix
   document.querySelector('#stock-movement-table').innerHTML = movementRows.length ? movementRows.map((item) => `
@@ -981,6 +1301,9 @@ function renderCharts(dailySales, paymentBreakdown) {
           tension: 0.35,
           fill: true,
           pointBackgroundColor: '#4f46e5',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 2,
+          pointRadius: 4,
           pointHoverRadius: 6
         }]
       },
@@ -991,22 +1314,19 @@ function renderCharts(dailySales, paymentBreakdown) {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (item) => ` Omzet: ${rupiah(item.raw)}`
+              label: (context) => ` Omzet: ${rupiah(context.raw)}`
             }
           }
         },
         scales: {
+          x: {
+            grid: { display: false }
+          },
           y: {
             beginAtZero: true,
             ticks: {
-              callback: (val) => `${Number(val) / 1000}k`,
-              font: { family: 'DM Sans', size: 10 }
-            },
-            grid: { color: '#f1f5f9' }
-          },
-          x: {
-            grid: { display: false },
-            ticks: { font: { family: 'DM Sans', size: 10 } }
+              callback: (val) => Number(val) >= 1000 ? `${(val / 1000).toFixed(0)}k` : val
+            }
           }
         }
       }
@@ -1014,21 +1334,20 @@ function renderCharts(dailySales, paymentBreakdown) {
   }
 
   // Chart 2: Payment Method Breakdown (Doughnut Chart)
-  const paymentCanvas = document.querySelector('#payment-chart');
-  if (paymentCanvas) {
+  const payCanvas = document.querySelector('#payment-chart');
+  if (payCanvas) {
     if (state.charts.paymentBreakdown) state.charts.paymentBreakdown.destroy();
 
-    const labels = (paymentBreakdown || []).map((p) => p.metode_pembayaran);
-    const dataValues = (paymentBreakdown || []).map((p) => Number(p.total_nominal));
-    const colors = ['#4f46e5', '#10b981', '#06b6d4', '#f59e0b'];
+    const payLabels = (paymentBreakdown || []).map((p) => p.metode_pembayaran);
+    const payValues = (paymentBreakdown || []).map((p) => Number(p.total_nominal));
 
-    state.charts.paymentBreakdown = new Chart(paymentCanvas, {
+    state.charts.paymentBreakdown = new Chart(payCanvas, {
       type: 'doughnut',
       data: {
-        labels: labels.length ? labels : ['Belum Ada'],
+        labels: payLabels.length ? payLabels : ['Belum Ada'],
         datasets: [{
-          data: dataValues.length ? dataValues : [1],
-          backgroundColor: labels.length ? colors.slice(0, labels.length) : ['#e2e8f0'],
+          data: payValues.length ? payValues : [1],
+          backgroundColor: ['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6'],
           borderWidth: 2,
           borderColor: '#ffffff'
         }]
@@ -1036,18 +1355,18 @@ function renderCharts(dailySales, paymentBreakdown) {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '68%',
         plugins: {
           legend: {
             position: 'bottom',
-            labels: { font: { family: 'DM Sans', size: 11 }, padding: 12 }
+            labels: { boxWidth: 12, padding: 14 }
           },
           tooltip: {
             callbacks: {
-              label: (item) => ` ${item.label}: ${rupiah(item.raw)}`
+              label: (context) => ` ${context.label}: ${rupiah(context.raw)}`
             }
           }
-        }
+        },
+        cutout: '68%'
       }
     });
   }
@@ -1370,6 +1689,7 @@ document.querySelector('#pos-search')?.addEventListener('keydown', (e) => {
 
     const matchedProduct = state.products.find((p) => p.aktif && (p.kode_barcode === barcodeInput || p.barcode === barcodeInput));
     if (matchedProduct) {
+      sound.scan();
       changeCart(matchedProduct.id_produk, 1);
       e.target.value = '';
       renderPosProducts();
@@ -1377,13 +1697,24 @@ document.querySelector('#pos-search')?.addEventListener('keydown', (e) => {
     } else {
       const filtered = state.products.filter((p) => p.aktif && p.nama_produk.toLowerCase().includes(barcodeInput.toLowerCase()));
       if (filtered.length === 1) {
+        sound.scan();
         changeCart(filtered[0].id_produk, 1);
         e.target.value = '';
         renderPosProducts();
         toast(`+1 ${filtered[0].nama_produk} ditambahkan!`);
+      } else {
+        sound.error();
+        toast('Produk dengan barcode tersebut tidak ditemukan.', true);
       }
     }
   }
+});
+
+// Sound toggle button in POS
+document.querySelector('#toggle-sound')?.addEventListener('click', () => {
+  const isEnabled = sound.toggle();
+  toast(isEnabled ? 'Suara scanner kasir diaktifkan.' : 'Suara scanner kasir dibisukan.');
+  if (isEnabled) sound.scan();
 });
 
 // Category filter chips in POS
@@ -1393,6 +1724,15 @@ document.querySelectorAll('#pos-category-chips .chip').forEach((chip) => {
     chip.classList.add('active');
     state.selectedPosCategory = chip.dataset.category || '';
     renderPosProducts();
+  });
+});
+
+// Date Range filter chips in Reports
+document.querySelectorAll('#report-period-chips .chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#report-period-chips .chip').forEach((c) => c.classList.remove('active'));
+    chip.classList.add('active');
+    loadReports(chip.dataset.period).catch((err) => toast(err.message, true));
   });
 });
 
@@ -1439,7 +1779,7 @@ document.querySelector('#supplier-master-search')?.addEventListener('input', ren
 document.querySelector('#new-purchase')?.addEventListener('click', openPurchaseModal);
 document.querySelector('#new-return')?.addEventListener('click', openReturnModal);
 document.querySelector('#return-type-filter')?.addEventListener('change', renderReturns);
-document.querySelector('#movement-warehouse-filter')?.addEventListener('change', loadReports);
+document.querySelector('#movement-warehouse-filter')?.addEventListener('change', () => loadReports());
 
 document.querySelector('#export-sales-csv')?.addEventListener('click', exportSalesCSV);
 document.querySelector('#export-movement-csv')?.addEventListener('click', exportMovementCSV);
@@ -1452,6 +1792,8 @@ document.querySelector('#print-reports')?.addEventListener('click', () => window
 (async function initialize() {
   try {
     startLiveClock();
+    sound.updateUI();
+
     const dateEyebrow = document.querySelector('#dashboard-date-eyebrow');
     if (dateEyebrow) {
       dateEyebrow.textContent = new Intl.DateTimeFormat('id-ID', {

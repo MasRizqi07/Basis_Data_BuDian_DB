@@ -258,6 +258,30 @@ SET jumlah_stok = NEW.stok_fisik,
 WHERE id_produk = NEW.id_produk
   AND id_gudang = v_gudang;
 END $$ DELIMITER;
+CREATE OR REPLACE VIEW v_ringkasan_stok_kritis AS
+SELECT
+  p.id_produk,
+  p.barcode,
+  p.nama_produk,
+  p.satuan,
+  g.id_gudang,
+  g.nama_gudang,
+  cs.jumlah_stok,
+  cs.stok_minimum,
+  cs.status_stok,
+  cs.tanggal_update
+FROM current_stock cs
+JOIN produk p ON p.id_produk = cs.id_produk
+JOIN gudang g ON g.id_gudang = cs.id_gudang
+WHERE cs.status_stok IN ('Menipis', 'Habis');
+CREATE OR REPLACE VIEW v_rekap_omzet_harian AS
+SELECT
+  DATE_FORMAT(tanggal_penjualan, '%Y-%m-%d') AS tanggal,
+  COUNT(*) AS total_transaksi,
+  SUM(total_bayar) AS total_omzet,
+  AVG(total_bayar) AS rata_rata_omzet
+FROM penjualan
+GROUP BY DATE_FORMAT(tanggal_penjualan, '%Y-%m-%d');
 INSERT INTO kategori (id_kategori, nama_kategori, deskripsi)
 VALUES (
     1,

@@ -177,11 +177,39 @@ async function getReferenceData(_req, res) {
   res.json({ data: { categories, warehouses, employees } });
 }
 
+async function getDbOverview(_req, res) {
+  const [tables] = await pool.execute(
+    `SELECT TABLE_NAME AS table_name, TABLE_TYPE AS table_type, ENGINE AS engine,
+            TABLE_ROWS AS approx_rows
+       FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+      ORDER BY TABLE_TYPE ASC, TABLE_NAME ASC`
+  );
+  const [triggers] = await pool.execute(
+    `SELECT TRIGGER_NAME AS trigger_name, EVENT_MANIPULATION AS event_type,
+            EVENT_OBJECT_TABLE AS target_table, ACTION_TIMING AS timing
+       FROM information_schema.TRIGGERS
+      WHERE TRIGGER_SCHEMA = DATABASE()
+      ORDER BY TRIGGER_NAME ASC`
+  );
+  const baseTables = tables.filter((t) => t.table_type === 'BASE TABLE');
+  const views = tables.filter((t) => t.table_type === 'VIEW');
+  res.json({
+    data: {
+      database: process.env.DB_NAME || 'db_inventory_minimarket',
+      baseTables,
+      views,
+      triggers
+    }
+  });
+}
+
 module.exports = {
   createProduct,
   createSupplier,
   deleteProduct,
   deleteSupplier,
+  getDbOverview,
   getReferenceData,
   isValidEan13,
   listProducts,

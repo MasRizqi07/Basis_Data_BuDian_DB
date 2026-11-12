@@ -40,15 +40,18 @@ Semua primary key auto-increment dan foreign key menggunakan `BIGINT UNSIGNED`.
 ## 3. Fitur Utama Sistem (Monitoring vs Control)
 
 - **Monitoring:**
-  * Dashboard KPI real-time (Total Produk, Nilai HPP, Item Menipis, Item Habis).
-  * Tabel ringkasan persediaan dengan filter per gudang dan pencarian barcode/nama.
-  * Laporan & Analitik omzet penjualan, produk fast-moving (terlaris), dan kartu mutasi stok komprehensif.
+  * Dashboard KPI real-time (Total Produk, Nilai HPP, Item Menipis, Item Habis) dengan animasi count-up dan filter klik cepat per status (`Aman`, `Menipis`, `Habis`).
+  * Popover Peringatan Stok Kritis di topbar (`v_ringkasan_stok_kritis`) lengkap dengan badge notifikasi sidebar dan tombol Buat PO Cepat.
+  * Inspektur Arsitektur Basis Data (`Database Architecture Inspector`) untuk melihat daftar 14 tabel 3NF, 2 database trigger, dan 2 view MySQL secara live.
+  * Mode Terang & Mode Gelap (Light/Dark Mode) tersimpan di browser dengan penyesuaian tema Chart.js dinamis.
+  * Tabel ringkasan persediaan dengan filter per gudang, status stok, dan pencarian barcode/nama.
+  * Laporan & Analitik omzet penjualan (`Chart.js`), produk fast-moving (terlaris), dan kartu mutasi stok komprehensif.
   * Ekspor ringkasan penjualan dan mutasi stok ke file CSV atau cetak langsung.
 - **Control:**
-  * **Kasir / POS:** Pembatasan kuantitas beli di UI, validasi transaksi ACID dengan locking `SELECT ... FOR UPDATE`, dan auto-deduct via trigger.
+  * **Kasir / POS:** Pembatasan kuantitas beli di UI, shortcut keyboard `F2`, feedback suara Web Audio, sub-tab Riwayat Struk & cetak ulang struk, validasi transaksi ACID dengan locking `SELECT ... FOR UPDATE`, dan auto-deduct via trigger.
   * **Pengadaan & Goods Receipt:** Pembuatan PO supplier dan tombol konfirmasi penerimaan barang (`POST /api/purchases/:id/receive`) yang otomatis menambah saldo `current_stock`.
   * **Retur Barang:** Transaksi retur ke supplier (memotong stok barang rusak) dan retur dari pelanggan (mengembalikan stok layak jual).
-  * **Stock Opname:** Perhitungan fisik independen per gudang, kalkulasi selisih (+/-), dan rekonsiliasi saldo seketika via database trigger.
+  * **Stock Opname:** Perhitungan fisik independen per gudang, tombol auto-isi sesuai sistem, kalkulasi selisih (+/-), sub-tab Riwayat Audit beserta modal rincian rekonsiliasi, dan sinkronisasi saldo via database trigger.
 
 ---
 
@@ -59,6 +62,8 @@ Semua primary key auto-increment dan foreign key menggunakan `BIGINT UNSIGNED`.
 | GET | `/api/health` | Status server dan konektivitas basis data |
 | GET | `/api/stock` | Daftar snapshot stok (dukungan filter `?warehouseId=1`) |
 | GET | `/api/stock/summary` | KPI total produk, nilai HPP, stok menipis dan habis |
+| GET | `/api/stock/critical` | Daftar stok kritis (`Menipis` / `Habis`) dari view `v_ringkasan_stok_kritis` |
+| GET | `/api/pos` | Daftar 50 transaksi penjualan kasir terbaru beserta jumlah item |
 | POST | `/api/pos/checkout` | Transaksi kasir POS berprinsip ACID (auto trigger potong stok) |
 | GET | `/api/pos/:id` | Rincian struk transaksi kasir dan daftar item belanja |
 | GET | `/api/purchases` | Riwayat PO pengadaan dan status faktur |
@@ -69,12 +74,15 @@ Semua primary key auto-increment dan foreign key menggunakan `BIGINT UNSIGNED`.
 | GET | `/api/returns/references` | Daftar referensi PO dan struk kasir untuk form retur |
 | GET | `/api/returns/:id` | Rincian transaksi retur barang beserta alasan dan item |
 | POST | `/api/returns` | Transaksi pencatatan retur dan mutasi stok terkait |
+| GET | `/api/opname` | Daftar riwayat sesi audit Stock Opname dan net selisih |
+| GET | `/api/opname/:id` | Rincian audit Stock Opname beserta item sistem vs fisik |
 | POST | `/api/opname` | Simpan audit fisik opname (auto trigger sinkronisasi stok) |
 | GET | `/api/reports/sales` | Rekapitulasi omzet penjualan (`?period=all\|30d\|7d`), metode bayar, dan produk terlaris |
 | GET | `/api/reports/stock-movement` | Kartu mutasi stok lengkap (masuk/keluar/opname/saldo akhir) |
 | GET/POST/PUT/DELETE | `/api/masters/products` | CRUD master produk (DELETE menonaktifkan katalog) |
 | GET/POST/PUT/DELETE | `/api/masters/suppliers` | CRUD master supplier pemasok barang |
 | GET | `/api/masters/references` | Data referensi kategori, gudang, dan karyawan |
+| GET | `/api/masters/db-overview` | Metadata live 14 tabel dasar, 2 triggers, dan 2 views dari `information_schema` |
 
 ---
 

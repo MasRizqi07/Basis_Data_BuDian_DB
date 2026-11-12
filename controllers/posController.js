@@ -7,6 +7,24 @@ function makeTransactionNumber() {
   return `TRX-${stamp}-${randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
+async function listTransactions(_req, res) {
+  const [rows] = await pool.execute(
+    `SELECT p.id_penjualan, p.no_transaksi, p.tanggal_penjualan,
+            p.total_bayar, p.metode_pembayaran,
+            k.nama_karyawan, g.nama_gudang,
+            COUNT(dp.id_detail_jual) AS jumlah_item,
+            COALESCE(SUM(dp.jumlah), 0) AS total_qty
+       FROM penjualan p
+       JOIN karyawan k ON k.id_karyawan = p.id_karyawan
+       JOIN gudang g ON g.id_gudang = p.id_gudang
+       LEFT JOIN detail_penjualan dp ON dp.id_penjualan = p.id_penjualan
+      GROUP BY p.id_penjualan, p.no_transaksi, p.tanggal_penjualan, p.total_bayar, p.metode_pembayaran, k.nama_karyawan, g.nama_gudang
+      ORDER BY p.tanggal_penjualan DESC
+      LIMIT 50`
+  );
+  res.json({ data: rows });
+}
+
 async function getTransactionDetail(req, res) {
   const saleId = requiredPositiveInteger(req.params.id, 'ID penjualan');
   const [sales] = await pool.execute(
@@ -155,4 +173,4 @@ async function checkout(req, res) {
   }
 }
 
-module.exports = { checkout, getTransactionDetail };
+module.exports = { checkout, getTransactionDetail, listTransactions };

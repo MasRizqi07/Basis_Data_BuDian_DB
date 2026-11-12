@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#4f46e5">
   <title>Stockwise — Sistem Manajemen Stock & Inventory Minimarket (14 Tabel 3NF)</title>
-  
+
   <!-- Fonts & Icons -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,9 +37,9 @@
 
     <p class="nav-label">OPERASIONAL UTAMA</p>
     <nav class="main-nav">
-      <button class="nav-link active" data-page="dashboard"><i data-lucide="layout-dashboard"></i>Dashboard Stok</button>
-      <button class="nav-link" data-page="pos"><i data-lucide="shopping-cart"></i>Kasir / POS</button>
-      <button class="nav-link" data-page="purchases"><i data-lucide="truck"></i>Pengadaan (PO) <span class="nav-dot" title="PO Aktif"></span></button>
+      <button class="nav-link active" data-page="dashboard"><i data-lucide="layout-dashboard"></i>Dashboard Stok <span class="nav-pill" id="nav-badge-critical" style="display:none">0</span></button>
+      <button class="nav-link" data-page="pos"><i data-lucide="shopping-cart"></i>Kasir / POS <span class="shortcut-hint" style="margin-left:auto">F2</span></button>
+      <button class="nav-link" data-page="purchases"><i data-lucide="truck"></i>Pengadaan (PO) <span class="nav-pill amber" id="nav-badge-po" style="display:none">0</span></button>
       <button class="nav-link" data-page="returns"><i data-lucide="rotate-ccw"></i>Retur Barang</button>
       <button class="nav-link" data-page="opname"><i data-lucide="clipboard-check"></i>Stock Opname</button>
       <button class="nav-link" data-page="reports"><i data-lucide="bar-chart-3"></i>Laporan & Analitik</button>
@@ -52,10 +52,10 @@
     </nav>
 
     <div class="sidebar-bottom">
-      <div class="help-card">
+      <div class="help-card clickable" id="open-db-inspector" role="button" tabindex="0" title="Klik untuk melihat Arsitektur 14 Tabel, Views & Triggers MySQL">
         <span class="help-icon"><i data-lucide="database"></i></span>
-        <b>Basis Data Bu Dian</b>
-        <small>14 Tabel 3NF • 2 Database Triggers • ACID Transactions.</small>
+        <b>Basis Data Bu Dian ↗</b>
+        <small>14 Tabel 3NF • 2 Triggers • 2 Views • Schema Inspector.</small>
       </div>
       <div class="user-profile">
         <span class="profile-avatar">AD</span>
@@ -67,6 +67,9 @@
       </div>
     </div>
   </aside>
+
+  <!-- Mobile Sidebar Overlay -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
   <!-- Main Application Content -->
   <main class="main-content">
@@ -82,8 +85,27 @@
       <div class="top-actions">
         <span class="clock-pill" id="live-clock"><i data-lucide="clock"></i> --:--:-- WIB</span>
         <span class="live-indicator"><span></span> MySQL 8.4 • Active</span>
+        <button class="icon-button" id="theme-toggle" title="Ganti Tema Gelap / Terang" aria-label="Ganti Tema"><i data-lucide="moon" id="theme-icon"></i></button>
         <button class="icon-button" id="refresh-button" title="Muat Ulang Semua Data" aria-label="Muat ulang"><i data-lucide="refresh-cw"></i></button>
-        <button class="icon-button notification" title="Notifikasi Sistem" aria-label="Notifikasi"><i data-lucide="bell"></i><span></span></button>
+        <div class="notif-wrapper">
+          <button class="icon-button" id="notif-button" title="Peringatan Stok Kritis" aria-label="Notifikasi Stok Kritis">
+            <i data-lucide="bell"></i>
+            <span class="notif-count-badge hidden" id="notif-count">0</span>
+          </button>
+          <div class="notif-popover" id="notif-popover" role="region" aria-label="Daftar Peringatan Stok">
+            <div class="notif-header">
+              <b>Peringatan Stok Kritis</b>
+              <span class="badge out" id="notif-summary-badge">0 item</span>
+            </div>
+            <div class="notif-list" id="notif-list">
+              <div class="empty-state" style="padding:24px!important">Semua persediaan aman.</div>
+            </div>
+            <div class="notif-footer">
+              <small style="color:var(--text-muted)">View: <code>v_ringkasan_stok_kritis</code></small>
+              <button class="text-button" id="notif-goto-po">Buat PO Cepat →</button>
+            </div>
+          </div>
+        </div>
         <span class="top-avatar" title="Admin Profil">AD</span>
       </div>
     </header>
@@ -101,7 +123,7 @@
 
       <!-- KPI Summary Cards -->
       <div class="kpi-grid">
-        <article class="kpi-card">
+        <article class="kpi-card clickable" data-stock-filter="" title="Tampilkan seluruh produk">
           <div class="kpi-top">
             <span>Total Produk Aktif</span>
             <span class="kpi-icon violet"><i data-lucide="package"></i></span>
@@ -125,7 +147,7 @@
           </div>
         </article>
 
-        <article class="kpi-card">
+        <article class="kpi-card clickable" data-stock-filter="Menipis" title="Klik untuk filter stok menipis">
           <div class="kpi-top">
             <span>Stok Menipis</span>
             <span class="kpi-icon amber"><i data-lucide="triangle-alert"></i></span>
@@ -133,11 +155,11 @@
           <div class="kpi-value" id="kpi-low">—</div>
           <div class="kpi-foot">
             <span class="trend warning">Ambang Batas</span>
-            <span class="muted">perlu segera di-PO</span>
+            <span class="muted">klik untuk filter tabel</span>
           </div>
         </article>
 
-        <article class="kpi-card">
+        <article class="kpi-card clickable" data-stock-filter="Habis" title="Klik untuk filter stok habis">
           <div class="kpi-top">
             <span>Stok Habis (Kosong)</span>
             <span class="kpi-icon red"><i data-lucide="circle-x"></i></span>
@@ -145,7 +167,7 @@
           <div class="kpi-value" id="kpi-empty">—</div>
           <div class="kpi-foot">
             <span class="trend danger">Kritis</span>
-            <span class="muted">saldo 0 unit</span>
+            <span class="muted">klik untuk filter tabel</span>
           </div>
         </article>
       </div>
@@ -170,6 +192,15 @@
             </button>
           </div>
         </div>
+        <div class="stock-filter-bar">
+          <div class="category-chips" id="stock-status-chips">
+            <button class="chip active" data-status="">Semua Status</button>
+            <button class="chip" data-status="Aman">Aman</button>
+            <button class="chip" data-status="Menipis">Menipis</button>
+            <button class="chip" data-status="Habis">Habis</button>
+          </div>
+          <small style="color:var(--text-muted)">Klik kartu KPI atau status untuk memfilter daftar secara instan.</small>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -178,12 +209,15 @@
                 <th>BARCODE</th>
                 <th>LOKASI GUDANG</th>
                 <th>JUMLAH STOK</th>
+                <th>STOK MIN</th>
+                <th>HARGA BELI</th>
+                <th>HARGA JUAL</th>
                 <th>STATUS STOK</th>
                 <th>TERAKHIR DIPERBARUI</th>
               </tr>
             </thead>
             <tbody id="stock-table">
-              <tr><td colspan="6" class="empty-state">Memuat data snapshot stok...</td></tr>
+              <tr><td colspan="9" class="empty-state">Memuat data snapshot stok...</td></tr>
             </tbody>
           </table>
         </div>
@@ -200,112 +234,154 @@
         <div>
           <p class="eyebrow">POINT OF SALE (POS)</p>
           <h1>Terminal Kasir & Checkout</h1>
-          <p class="muted">Scan barcode / pilih produk, kelola keranjang belanja, kalkulasi kembalian, dan cetak struk.</p>
+          <p class="muted">Scan barcode / pilih produk, kelola keranjang belanja, kalkulasi kembalian, dan cetak ulang struk.</p>
         </div>
         <div class="table-action">
+          <div class="segmented-tabs" id="pos-subtabs">
+            <button type="button" class="segmented-tab active" data-pos-tab="terminal"><i data-lucide="shopping-cart"></i> Terminal Kasir</button>
+            <button type="button" class="segmented-tab" data-pos-tab="history"><i data-lucide="receipt"></i> Riwayat Struk</button>
+          </div>
           <button class="button button-secondary" id="toggle-sound" title="Aktif/Nonaktifkan Suara Scanner Kasir">
             <i data-lucide="volume-2" id="sound-icon"></i> <span id="sound-status-label">Suara: Nyala</span>
           </button>
         </div>
       </div>
 
-      <div class="split-grid">
-        <!-- Katalog Produk Kasir -->
-        <div class="content-card">
-          <div class="card-heading">
-            <div>
-              <h2>Katalog Produk</h2>
-              <p class="muted">Tekan <b>Enter</b> setelah mengetik/scan barcode untuk langsung menambahkan ke keranjang.</p>
-            </div>
-          </div>
-
-          <!-- Barcode & Search Input -->
-          <label class="search-field wide">
-            <i data-lucide="barcode"></i>
-            <input id="pos-search" placeholder="Scan barcode atau cari nama produk... [Enter untuk tambah]" type="search" autocomplete="off">
-          </label>
-
-          <!-- Category Chips Filter -->
-          <div class="category-chips" id="pos-category-chips">
-            <button class="chip active" data-category="">Semua Kategori</button>
-            <button class="chip" data-category="Makanan">Makanan</button>
-            <button class="chip" data-category="Minuman">Minuman</button>
-            <button class="chip" data-category="Kebutuhan Rumah">Kebutuhan Rumah</button>
-          </div>
-
-          <!-- Product Options List -->
-          <div id="pos-product-list" class="product-list">
-            <div class="empty-state">Memuat katalog kasir...</div>
-          </div>
-        </div>
-
-        <!-- Keranjang & Checkout -->
-        <div class="content-card">
-          <div class="card-heading">
-            <div>
-              <h2>Keranjang Belanja</h2>
-              <p class="muted"><span id="cart-count">0</span> item dipilih</p>
-            </div>
-            <button id="clear-cart" class="text-button" title="Kosongkan Keranjang">Kosongkan</button>
-          </div>
-
-          <!-- Cart Item Rows -->
-          <div id="cart-items" class="cart-items">
-            <div class="empty-state">Belum ada item dalam keranjang.</div>
-          </div>
-
-          <!-- Checkout Box & Payment Calculator -->
-          <div class="checkout-box">
-            <div class="form-row">
-              <label>
-                Lokasi Gudang Penjualan
-                <select id="pos-warehouse" class="select-control"></select>
-              </label>
-              <label>
-                Kasir Bertugas
-                <select id="pos-employee" class="select-control"></select>
-              </label>
+      <div class="sub-panel active" id="pos-panel-terminal">
+        <div class="split-grid">
+          <!-- Katalog Produk Kasir -->
+          <div class="content-card">
+            <div class="card-heading">
+              <div>
+                <h2>Katalog Produk</h2>
+                <p class="muted">Tekan <b>Enter</b> setelah mengetik/scan barcode untuk langsung menambahkan ke keranjang.</p>
+              </div>
             </div>
 
-            <label>
-              Metode Pembayaran
-              <select id="payment-method" class="select-control">
-                <option value="Tunai">Tunai (Cash)</option>
-                <option value="QRIS">QRIS (Gopay/OVO/ShopeePay)</option>
-                <option value="Debit">Kartu Debit / EDC</option>
-              </select>
+            <!-- Barcode & Search Input -->
+            <label class="search-field wide">
+              <i data-lucide="barcode"></i>
+              <input id="pos-search" placeholder="Scan barcode atau cari nama produk... [Enter untuk tambah]" type="search" autocomplete="off">
             </label>
 
-            <!-- Quick Cash Calculation Container -->
-            <div class="quick-cash-box" id="pos-cash-calculator">
-              <div class="quick-cash-label">
-                <span>Kalkulator Uang Tunai</span>
-                <span class="muted">Pilih pecahan cepat:</span>
-              </div>
-              <div class="quick-cash-buttons">
-                <button type="button" class="cash-chip cash-exact" id="cash-exact-btn">Uang Pas</button>
-                <button type="button" class="cash-chip" data-cash="10000">10rb</button>
-                <button type="button" class="cash-chip" data-cash="20000">20rb</button>
-                <button type="button" class="cash-chip" data-cash="50000">50rb</button>
-                <button type="button" class="cash-chip" data-cash="100000">100rb</button>
-                <button type="button" class="cash-chip" data-cash="200000">200rb</button>
-              </div>
-              <input type="number" id="pos-cash-input" class="input-control" placeholder="Nominal uang diterima dari pembeli..." min="0" step="500" style="width:100%">
-              <div class="change-display exact" id="pos-change-display">
-                <span>Status Kembalian</span>
-                <strong id="pos-change-value">Rp0</strong>
-              </div>
+            <!-- Category Chips Filter -->
+            <div class="category-chips" id="pos-category-chips">
+              <button class="chip active" data-category="">Semua Kategori</button>
+              <button class="chip" data-category="Makanan">Makanan</button>
+              <button class="chip" data-category="Minuman">Minuman</button>
+              <button class="chip" data-category="Kebutuhan Rumah">Kebutuhan Rumah</button>
             </div>
 
-            <!-- Total Order Display -->
-            <div class="total-row">
-              <span>Total Tagihan Belanja</span>
-              <strong id="cart-total">Rp0</strong>
+            <!-- Product Options List -->
+            <div id="pos-product-list" class="product-list">
+              <div class="empty-state">Memuat katalog kasir...</div>
+            </div>
+          </div>
+
+          <!-- Keranjang & Checkout -->
+          <div class="content-card">
+            <div class="card-heading">
+              <div>
+                <h2>Keranjang Belanja</h2>
+                <p class="muted"><span id="cart-count">0</span> item dipilih</p>
+              </div>
+              <button id="clear-cart" class="text-button" title="Kosongkan Keranjang">Kosongkan</button>
             </div>
 
-            <button class="button button-primary full-width" id="checkout-button">
-              <i data-lucide="receipt"></i> Proses Pembayaran & Cetak Struk
-            </button>
+            <!-- Cart Item Rows -->
+            <div id="cart-items" class="cart-items">
+              <div class="empty-state">Belum ada item dalam keranjang.</div>
+            </div>
+
+            <!-- Checkout Box & Payment Calculator -->
+            <div class="checkout-box">
+              <div class="form-row">
+                <label>
+                  Lokasi Gudang Penjualan
+                  <select id="pos-warehouse" class="select-control"></select>
+                </label>
+                <label>
+                  Kasir Bertugas
+                  <select id="pos-employee" class="select-control"></select>
+                </label>
+              </div>
+
+              <label>
+                Metode Pembayaran
+                <select id="payment-method" class="select-control">
+                  <option value="Tunai">Tunai (Cash)</option>
+                  <option value="QRIS">QRIS (Gopay/OVO/ShopeePay)</option>
+                  <option value="Debit">Kartu Debit / EDC</option>
+                </select>
+              </label>
+
+              <!-- Quick Cash Calculation Container -->
+              <div class="quick-cash-box" id="pos-cash-calculator">
+                <div class="quick-cash-label">
+                  <span>Kalkulator Uang Tunai</span>
+                  <span class="muted">Pilih pecahan cepat:</span>
+                </div>
+                <div class="quick-cash-buttons">
+                  <button type="button" class="cash-chip cash-exact" id="cash-exact-btn">Uang Pas</button>
+                  <button type="button" class="cash-chip" data-cash="10000">10rb</button>
+                  <button type="button" class="cash-chip" data-cash="20000">20rb</button>
+                  <button type="button" class="cash-chip" data-cash="50000">50rb</button>
+                  <button type="button" class="cash-chip" data-cash="100000">100rb</button>
+                  <button type="button" class="cash-chip" data-cash="200000">200rb</button>
+                </div>
+                <input type="number" id="pos-cash-input" class="input-control" placeholder="Nominal uang diterima dari pembeli..." min="0" step="500" style="width:100%">
+                <div class="change-display exact" id="pos-change-display">
+                  <span>Status Kembalian</span>
+                  <strong id="pos-change-value">Rp0</strong>
+                </div>
+              </div>
+
+              <!-- Total Order Display -->
+              <div class="total-row">
+                <span>Total Tagihan Belanja</span>
+                <strong id="cart-total">Rp0</strong>
+              </div>
+
+              <button class="button button-primary full-width" id="checkout-button">
+                <i data-lucide="receipt"></i> Proses Pembayaran & Cetak Struk
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sub-panel" id="pos-panel-history">
+        <div class="content-card">
+          <div class="card-heading">
+            <div>
+              <h2>Riwayat Transaksi Struk Kasir (penjualan & detail_penjualan)</h2>
+              <p class="muted">Klik tombol Lihat Struk untuk melihat rincian belanja pelanggan atau mencetak ulang struk.</p>
+            </div>
+            <div class="card-actions">
+              <label class="search-field">
+                <i data-lucide="search"></i>
+                <input id="pos-history-search" placeholder="Cari No. Transaksi / Kasir..." type="search">
+              </label>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>NO. TRANSAKSI</th>
+                  <th>WAKTU</th>
+                  <th>GUDANG / LOKASI</th>
+                  <th>KASIR</th>
+                  <th>ITEM</th>
+                  <th>METODE BAYAR</th>
+                  <th>TOTAL BAYAR</th>
+                  <th>AKSI</th>
+                </tr>
+              </thead>
+              <tbody id="pos-history-table">
+                <tr><td colspan="8" class="empty-state">Memuat riwayat transaksi POS...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -407,55 +483,93 @@
           <h1>Stock Opname (Audit Persediaan)</h1>
           <p class="muted">Rekonsiliasi saldo buku sistem dengan stok fisik riil di rak untuk menjamin akurasi mutasi.</p>
         </div>
+        <div class="table-action">
+          <div class="segmented-tabs" id="opname-subtabs">
+            <button type="button" class="segmented-tab active" data-opname-tab="form"><i data-lucide="clipboard-edit"></i> Hitung Fisik</button>
+            <button type="button" class="segmented-tab" data-opname-tab="history"><i data-lucide="history"></i> Riwayat Audit</button>
+          </div>
+        </div>
       </div>
 
-      <div class="content-card opname-card">
-        <div class="card-heading">
-          <div>
-            <h2>Formulir Hitung Fisik Barang</h2>
-            <p class="muted">Pilih lokasi gudang, masukkan kuantitas fisik, dan sistem akan mengalkulasi selisih secara otomatis.</p>
+      <div class="sub-panel active" id="opname-panel-form">
+        <div class="content-card opname-card">
+          <div class="card-heading">
+            <div>
+              <h2>Formulir Hitung Fisik Barang</h2>
+              <p class="muted">Pilih lokasi gudang, masukkan kuantitas fisik, dan sistem akan mengalkulasi selisih secara otomatis.</p>
+            </div>
+            <div class="card-actions">
+              <button class="button button-secondary" id="opname-prefill" title="Isi otomatis semua nilai fisik sama dengan sistem untuk audit cepat">
+                <i data-lucide="sparkles"></i> Auto-isi Sesuai Sistem
+              </button>
+            </div>
           </div>
-          <div class="card-actions">
-            <button class="button button-secondary" id="opname-prefill" title="Isi otomatis semua nilai fisik sama dengan sistem untuk audit cepat">
-              <i data-lucide="sparkles"></i> Auto-isi Sesuai Sistem
-            </button>
+
+          <div class="form-row">
+            <label>
+              Gudang yang Diaudit
+              <select id="opname-warehouse" class="select-control"></select>
+            </label>
+            <label>
+              Auditor / Petugas
+              <select id="opname-employee" class="select-control"></select>
+            </label>
+            <label>
+              Catatan Tambahan
+              <input id="opname-notes" class="input-control" placeholder="Contoh: Audit fisik rak mingguan toko depan">
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>PRODUK & BARCODE</th>
+                  <th>STOK SISTEM</th>
+                  <th>INPUT STOK FISIK RIIL</th>
+                  <th>SELISIH AUDIT</th>
+                </tr>
+              </thead>
+              <tbody id="opname-table">
+                <tr><td colspan="4" class="empty-state">Pilih gudang untuk memuat item opname...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="opname-footer">
+            <span>* Hanya baris yang diisi fisik yang akan disinkronkan ke saldo <code>current_stock</code> melalui trigger database.</span>
+            <button class="button button-primary" id="save-opname"><i data-lucide="check"></i> Simpan Hasil Opname & Sinkronisasi</button>
           </div>
         </div>
+      </div>
 
-        <div class="form-row">
-          <label>
-            Gudang yang Diaudit
-            <select id="opname-warehouse" class="select-control"></select>
-          </label>
-          <label>
-            Auditor / Petugas
-            <select id="opname-employee" class="select-control"></select>
-          </label>
-          <label>
-            Catatan Tambahan
-            <input id="opname-notes" class="input-control" placeholder="Contoh: Audit fisik rak mingguan toko depan">
-          </label>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>PRODUK & BARCODE</th>
-                <th>STOK SISTEM</th>
-                <th>INPUT STOK FISIK RIIL</th>
-                <th>SELISIH AUDIT</th>
-              </tr>
-            </thead>
-            <tbody id="opname-table">
-              <tr><td colspan="4" class="empty-state">Pilih gudang untuk memuat item opname...</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="opname-footer">
-          <span>* Hanya baris yang diisi fisik yang akan disinkronkan ke saldo <code>current_stock</code> melalui trigger database.</span>
-          <button class="button button-primary" id="save-opname"><i data-lucide="check"></i> Simpan Hasil Opname & Sinkronisasi</button>
+      <div class="sub-panel" id="opname-panel-history">
+        <div class="content-card">
+          <div class="card-heading">
+            <div>
+              <h2>Riwayat Sesi Audit Stock Opname (stock_opname & detail_stock_opname)</h2>
+              <p class="muted">Pantau riwayat audit fisik per gudang dan lihat rincian selisih tiap produk.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>NO. OPNAME</th>
+                  <th>TANGGAL AUDIT</th>
+                  <th>GUDANG</th>
+                  <th>AUDITOR</th>
+                  <th>ITEM DIAUDIT</th>
+                  <th>NET SELISIH</th>
+                  <th>STATUS</th>
+                  <th>AKSI</th>
+                </tr>
+              </thead>
+              <tbody id="opname-history-table">
+                <tr><td colspan="8" class="empty-state">Memuat riwayat audit stock opname...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>

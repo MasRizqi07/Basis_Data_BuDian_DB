@@ -7,6 +7,54 @@ function makeOpnameNumber() {
   return `OPN-${stamp}-${randomBytes(3).toString('hex').toUpperCase()}`;
 }
 
+async function listOpnames(_req, res) {
+  const [rows] = await pool.execute(
+    `SELECT so.id_opname, so.no_opname, so.tanggal_opname, so.status_opname, so.keterangan,
+            g.nama_gudang, k.nama_karyawan,
+            COUNT(d.id_detail_opname) AS jumlah_item,
+            COALESCE(SUM(d.selisih), 0) AS total_selisih
+       FROM stock_opname so
+       JOIN gudang g ON g.id_gudang = so.id_gudang
+       JOIN karyawan k ON k.id_karyawan = so.id_karyawan
+       LEFT JOIN detail_stock_opname d ON d.id_opname = so.id_opname
+      GROUP BY so.id_opname, so.no_opname, so.tanggal_opname, so.status_opname, so.keterangan, g.nama_gudang, k.nama_karyawan
+      ORDER BY so.tanggal_opname DESC
+      LIMIT 50`
+  );
+  res.json({ data: rows });
+}
+
+async function getOpnameDetail(req, res) {
+  const opnameId = requiredPositiveInteger(req.params.id, 'ID opname');
+  const [headers] = await pool.execute(
+    `SELECT so.id_opname, so.no_opname, so.tanggal_opname, so.status_opname, so.keterangan,
+            g.nama_gudang, k.nama_karyawan
+       FROM stock_opname so
+       JOIN gudang g ON g.id_gudang = so.id_gudang
+       JOIN karyawan k ON k.id_karyawan = so.id_karyawan
+      WHERE so.id_opname = ?`,
+    [opnameId]
+  );
+  if (!headers.length) throw httpError(404, 'Data stock opname tidak ditemukan.');
+
+  const [items] = await pool.execute(
+    `SELECT d.id_detail_opname, d.id_produk, p.nama_produk, p.barcode, p.satuan,
+            d.stok_sistem, d.stok_fisik, d.selisih, d.jenis_penyesuaian, d.keterangan
+       FROM detail_stock_opname d
+       JOIN produk p ON p.id_produk = d.id_produk
+      WHERE d.id_opname = ?
+      ORDER BY d.id_detail_opname ASC`,
+    [opnameId]
+  );
+
+  res.json({
+    data: {
+      ...headers[0],
+      items
+    }
+  });
+}
+
 async function createOpname(req, res) {
   const warehouseId = requiredPositiveInteger(req.body.warehouseId, 'ID gudang');
   const employeeId = requiredPositiveInteger(req.body.employeeId, 'ID karyawan');
@@ -122,4 +170,4 @@ async function createOpname(req, res) {
   }
 }
 
-module.exports = { createOpname };
+module.exports = { createOpname, getOpnameDetail, listOpnames };

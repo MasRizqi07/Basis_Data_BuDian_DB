@@ -1,6 +1,7 @@
 /**
  * STOCKWISE — MINIMARKET INVENTORY MANAGEMENT SYSTEM (14 TABEL 3NF)
- * Frontend Application Controller with Chart.js Visualizations & POS Calculator
+ * Frontend Application Controller with Smooth Animations, Dark Mode,
+ * Live Critical Stock Popover, Sub-Tabs, Chart.js & Web Audio POS Feedback
  */
 
 const state = {
@@ -8,12 +9,16 @@ const state = {
   products: [],
   suppliers: [],
   stock: [],
+  criticalStock: [],
   posStock: [],
+  posHistory: [],
   opnameStock: [],
+  opnameHistory: [],
   returns: [],
   purchases: [],
   reports: { sales: null, movement: [] },
   cart: new Map(),
+  selectedStockStatus: '',
   selectedPosCategory: '',
   selectedReportPeriod: 'all',
   charts: {
@@ -23,7 +28,7 @@ const state = {
 };
 
 // ============================================================================
-// Formatting & Utilities
+// Formatting, Animations & Utilities
 // ============================================================================
 
 const rupiah = (value) => new Intl.NumberFormat('id-ID', {
@@ -35,6 +40,54 @@ const rupiah = (value) => new Intl.NumberFormat('id-ID', {
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[char]));
+
+function animateMetric(selector, targetValue, formatter = (v) => Math.round(v).toLocaleString('id-ID')) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  const end = Number(targetValue || 0);
+  const start = Number(el.dataset.rawValue || 0);
+  el.dataset.rawValue = String(end);
+
+  if (start === end || !Number.isFinite(end)) {
+    el.textContent = formatter(end);
+    return;
+  }
+
+  const duration = 420;
+  const startTime = performance.now();
+  const step = (now) => {
+    const progress = Math.min((now - startTime) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = start + (end - start) * eased;
+    el.textContent = formatter(progress < 1 ? current : end);
+    if (progress < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// Theme Controller (Light / Dark Mode)
+const theme = {
+  current: localStorage.getItem('stockwise_theme') || 'light',
+
+  apply(mode) {
+    this.current = mode === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', this.current);
+    localStorage.setItem('stockwise_theme', this.current);
+    const btn = document.querySelector('#theme-toggle');
+    if (btn) {
+      btn.innerHTML = `<i data-lucide="${this.current === 'dark' ? 'sun' : 'moon'}" id="theme-icon"></i>`;
+      if (window.lucide) window.lucide.createIcons();
+    }
+    if (state.reports?.sales && document.querySelector('#page-reports.active')) {
+      renderCharts(state.reports.sales.dailySales, state.reports.sales.paymentBreakdown);
+    }
+  },
+
+  toggle() {
+    this.apply(this.current === 'dark' ? 'light' : 'dark');
+    toast(this.current === 'dark' ? 'Mode Gelap diaktifkan.' : 'Mode Terang diaktifkan.');
+  }
+};
 
 // Web Audio API Sound Synthesizer (Zero External Dependencies)
 const sound = {
@@ -58,7 +111,7 @@ const sound = {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       const startTime = this.ctx.currentTime + delay;
-      
+
       osc.type = type;
       if (Array.isArray(frequencies)) {
         osc.frequency.setValueAtTime(frequencies[0], startTime);
@@ -81,18 +134,15 @@ const sound = {
   },
 
   scan() {
-    // Crisp high-frequency barcode scanner beep (1800 Hz, 70ms)
     this.play(1800, 'sine', 0.07);
   },
 
   success() {
-    // Pleasant melodic two-tone chime for transaction success (C6 -> A6)
     this.play(1046.5, 'sine', 0.12, 0);
     this.play(1760, 'sine', 0.18, 0.08);
   },
 
   error() {
-    // Low frequency alert buzz for out of stock or rejection (sawtooth wave)
     this.play([220, 110], 'sawtooth', 0.22);
   },
 
@@ -166,7 +216,7 @@ function startLiveClock() {
 }
 
 // ============================================================================
-// References & Initial Loading
+// References, Critical Stock Alerts & DB Inspector
 // ============================================================================
 
 async function loadReferences() {
@@ -177,6 +227,107 @@ async function loadReferences() {
   setOptions('#opname-warehouse', state.references.warehouses);
   setOptions('#pos-employee', state.references.employees.filter((item) => item.jabatan === 'Kasir' || item.jabatan === 'Admin'));
   setOptions('#opname-employee', state.references.employees);
+}
+
+async function loadCriticalAlerts() {
+  try {
+    const rows = await api('/api/stock/critical');
+    state.criticalStock = rows;
+    const count = rows.length;
+
+    const notifCount = document.querySelector('#notif-count');
+    const summaryBadge = document.querySelector('#notif-summary-badge');
+    const navBadge = document.querySelector('#nav-badge-critical');
+    const notifList = document.querySelector('#notif-list');
+
+    if (notifCount) {
+      notifCount.textContent = count > 99 ? '99+' : String(count);
+      notifCount.classList.toggle('hidden', count === 0);
+    }
+    if (summaryBadge) {
+      summaryBadge.textContent = `${count} item`;
+      summaryBadge.className = `badge ${count === 0 ? 'safe' : 'out'}`;
+    }
+    if (navBadge) {
+      navBadge.textContent = String(count);
+      navBadge.style.display = count > 0 ? 'inline-flex' : 'none';
+    }
+    if (notifList) {
+      notifList.innerHTML = count ? rows.map((item) => `
+        <div class="notif-item">
+          <div style="min-width:0">
+            <b style="display:block;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(item.nama_produk)}</b>
+            <small style="color:var(--text-muted)">${escapeHtml(item.nama_gudang)} · Sisa: <b>${item.jumlah_stok}</b> / Min ${item.stok_minimum} ${escapeHtml(item.satuan)}</small>
+          </div>
+          ${statusBadge(item.status_stok)}
+        </div>
+      `).join('') : '<div class="empty-state" style="padding:24px!important">Seluruh stok aman di atas ambang minimum.</div>';
+    }
+  } catch (_) {}
+}
+
+async function openDbInspectorModal() {
+  try {
+    const overview = await api('/api/masters/db-overview');
+    const tableCards = overview.baseTables.map((t) => `
+      <div class="db-item-card">
+        <div>
+          <code>${escapeHtml(t.table_name)}</code>
+          <small style="display:block;color:var(--text-muted);font-size:10px">${escapeHtml(t.engine || 'InnoDB')} · ~${Number(t.approx_rows || 0)} baris</small>
+        </div>
+        <span class="badge neutral">3NF</span>
+      </div>
+    `).join('');
+
+    const triggerCards = overview.triggers.map((tr) => `
+      <div class="db-item-card">
+        <div>
+          <code>${escapeHtml(tr.trigger_name)}</code>
+          <small style="display:block;color:var(--text-muted);font-size:10px">${escapeHtml(tr.timing)} ${escapeHtml(tr.event_type)} ON <b>${escapeHtml(tr.target_table)}</b></small>
+        </div>
+        <span class="badge safe">Aktif</span>
+      </div>
+    `).join('');
+
+    const viewCards = overview.views.map((v) => `
+      <div class="db-item-card">
+        <div>
+          <code>${escapeHtml(v.table_name)}</code>
+          <small style="display:block;color:var(--text-muted);font-size:10px">MySQL Read-Only View</small>
+        </div>
+        <span class="badge neutral">VIEW</span>
+      </div>
+    `).join('');
+
+    openModal(`
+      <div class="modal-header">
+        <div>
+          <h2>Inspektur Arsitektur Basis Data (MySQL 8.4)</h2>
+          <p class="muted" style="margin:2px 0 0 0">Skema aktif: <b style="font-family:var(--font-mono);color:var(--indigo-600)">${escapeHtml(overview.database)}</b></p>
+        </div>
+        <button class="modal-close" id="modal-close-btn" aria-label="Tutup"><i data-lucide="x"></i></button>
+      </div>
+
+      <label style="margin-bottom:8px">${overview.baseTables.length} Tabel Relasional Ternormalisasi (3NF):</label>
+      <div class="db-overview-grid">${tableCards}</div>
+
+      <label style="margin-bottom:8px">${overview.triggers.length} Database Triggers Aktif (Integritas Otomatis):</label>
+      <div class="db-overview-grid">${triggerCards}</div>
+
+      <label style="margin-bottom:8px">${overview.views.length} Database Views (Monitoring & Analitik):</label>
+      <div class="db-overview-grid">${viewCards}</div>
+
+      <div class="modal-actions">
+        <button class="button button-primary" id="modal-close-action">Tutup Inspektur</button>
+      </div>
+    `, true);
+
+    document.querySelector('#modal-close-btn')?.addEventListener('click', closeModal);
+    document.querySelector('#modal-close-action')?.addEventListener('click', closeModal);
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 // ============================================================================
@@ -191,22 +342,36 @@ async function loadDashboard() {
     api(`/api/stock${query}`)
   ]);
 
-  document.querySelector('#kpi-products').textContent = Number(summary.total_produk || 0).toLocaleString('id-ID');
-  document.querySelector('#kpi-value').textContent = rupiah(summary.total_nilai_stok);
-  document.querySelector('#kpi-low').textContent = Number(summary.item_menipis || 0).toLocaleString('id-ID');
-  document.querySelector('#kpi-empty').textContent = Number(summary.item_habis || 0).toLocaleString('id-ID');
+  animateMetric('#kpi-products', summary.total_produk || 0);
+  animateMetric('#kpi-value', summary.total_nilai_stok || 0, rupiah);
+  animateMetric('#kpi-low', summary.item_menipis || 0);
+  animateMetric('#kpi-empty', summary.item_habis || 0);
 
   state.stock = stock;
+  renderStock();
+  loadCriticalAlerts();
+}
+
+function setStockStatusFilter(status) {
+  state.selectedStockStatus = status || '';
+  document.querySelectorAll('#stock-status-chips .chip').forEach((chip) => {
+    chip.classList.toggle('active', (chip.dataset.status || '') === state.selectedStockStatus);
+  });
   renderStock();
 }
 
 function renderStock() {
   const term = document.querySelector('#stock-search')?.value.toLowerCase().trim() || '';
-  const rows = state.stock.filter((item) =>
-    item.nama_produk.toLowerCase().includes(term) ||
-    item.kode_barcode.toLowerCase().includes(term) ||
-    item.nama_gudang.toLowerCase().includes(term)
-  );
+  const statusFilter = state.selectedStockStatus || '';
+
+  const rows = state.stock.filter((item) => {
+    const matchStatus = !statusFilter || item.status_stok === statusFilter;
+    const matchTerm = !term ||
+      item.nama_produk.toLowerCase().includes(term) ||
+      item.kode_barcode.toLowerCase().includes(term) ||
+      item.nama_gudang.toLowerCase().includes(term);
+    return matchStatus && matchTerm;
+  });
 
   const tbody = document.querySelector('#stock-table');
   if (!tbody) return;
@@ -218,7 +383,7 @@ function renderStock() {
           <span class="product-thumb"><i data-lucide="package"></i></span>
           <div>
             <b>${escapeHtml(item.nama_produk)}</b>
-            <small>Kode: ${escapeHtml(item.kode_barcode)}</small>
+            <small>${escapeHtml(item.satuan)}</small>
           </div>
         </div>
       </td>
@@ -231,20 +396,77 @@ function renderStock() {
       <td>${statusBadge(item.status_stok)}</td>
       <td><small style="color:var(--text-muted)">${new Date(item.tanggal_update_terakhir).toLocaleString('id-ID')}</small></td>
     </tr>
-  `).join('') : '<tr><td colspan="9" class="empty-state">Tidak ada snapshot stok yang cocok dengan kriteria pencarian.</td></tr>';
+  `).join('') : '<tr><td colspan="9" class="empty-state">Tidak ada snapshot stok yang cocok dengan kriteria filter/pencarian.</td></tr>';
 
   document.querySelector('#stock-count').textContent = `${rows.length} dari ${state.stock.length} data stok ditampilkan`;
   if (window.lucide) window.lucide.createIcons();
 }
 
 // ============================================================================
-// TAB 2: Point of Sale (POS Terminal & Checkout)
+// TAB 2: Point of Sale (POS Terminal & Transaction History)
 // ============================================================================
 
 async function loadPosStock() {
   const warehouse = document.querySelector('#pos-warehouse')?.value || 1;
   state.posStock = await api(`/api/stock?warehouseId=${encodeURIComponent(warehouse)}`);
   renderPosProducts();
+}
+
+async function loadPosHistory() {
+  state.posHistory = await api('/api/pos');
+  renderPosHistory();
+}
+
+function renderPosHistory() {
+  const term = document.querySelector('#pos-history-search')?.value.toLowerCase().trim() || '';
+  const rows = state.posHistory.filter((item) =>
+    !term ||
+    item.no_transaksi.toLowerCase().includes(term) ||
+    item.nama_karyawan.toLowerCase().includes(term) ||
+    item.metode_pembayaran.toLowerCase().includes(term)
+  );
+
+  const tbody = document.querySelector('#pos-history-table');
+  if (!tbody) return;
+
+  tbody.innerHTML = rows.length ? rows.map((item) => `
+    <tr>
+      <td><b style="font-family:var(--font-mono)">${escapeHtml(item.no_transaksi)}</b></td>
+      <td>${new Date(item.tanggal_penjualan).toLocaleString('id-ID')}</td>
+      <td>${escapeHtml(item.nama_gudang)}</td>
+      <td>${escapeHtml(item.nama_karyawan)}</td>
+      <td>${item.jumlah_item} jenis (${item.total_qty} unit)</td>
+      <td><span class="badge neutral">${escapeHtml(item.metode_pembayaran)}</span></td>
+      <td><b>${rupiah(item.total_bayar)}</b></td>
+      <td>
+        <button class="action-button secondary" data-view-sale="${item.id_penjualan}">
+          <i data-lucide="receipt"></i> Lihat Struk
+        </button>
+      </td>
+    </tr>
+  `).join('') : '<tr><td colspan="8" class="empty-state">Belum ada riwayat transaksi kasir yang cocok.</td></tr>';
+
+  tbody.querySelectorAll('[data-view-sale]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        const detail = await api(`/api/pos/${Number(btn.dataset.viewSale)}`);
+        showReceipt({
+          receiptNumber: detail.no_transaksi,
+          paymentMethod: detail.metode_pembayaran,
+          total: Number(detail.total_bayar),
+          cashReceived: Number(detail.total_bayar),
+          changeAmount: 0,
+          timestamp: detail.tanggal_penjualan,
+          cashier: detail.nama_karyawan,
+          items: detail.items
+        });
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+
+  if (window.lucide) window.lucide.createIcons();
 }
 
 function availableStock(productId) {
@@ -286,7 +508,7 @@ function renderPosProducts() {
         </div>
         <button class="button ${inCart > 0 ? 'button-secondary' : 'button-primary'} compact"
           data-add-cart="${item.id_produk}" ${isOutOfStock || inCart >= stock ? 'disabled' : ''}>
-          ${isOutOfStock ? 'Habis' : inCart > 0 ? `+1 (Ada ${inCart})` : '+ Tambah'}
+          ${isOutOfStock ? 'Habis' : inCart > 0 ? `+1 (${inCart})` : '+ Tambah'}
         </button>
       </div>
     `;
@@ -301,14 +523,15 @@ function renderPosProducts() {
 
 function changeCart(id, delta) {
   const product = state.products.find((item) => item.id_produk === id);
-  if (!product) return;
+  if (!product) return false;
   const current = state.cart.get(id) || 0;
   const quantity = current + delta;
   const maxStock = availableStock(id);
 
   if (quantity > maxStock) {
     sound.error();
-    return toast(`Stok tidak mencukupi! Hanya tersedia ${maxStock} ${product.satuan}.`, true);
+    toast(`Stok tidak mencukupi! Hanya tersedia ${maxStock} ${product.satuan}.`, true);
+    return false;
   }
   if (quantity <= 0) {
     state.cart.delete(id);
@@ -318,6 +541,7 @@ function changeCart(id, delta) {
   }
   renderCart();
   renderPosProducts();
+  return true;
 }
 
 function calculateCartTotal() {
@@ -441,7 +665,7 @@ async function checkout() {
     }
     renderCart();
 
-    await Promise.all([loadDashboard(), loadProducts(), loadPosStock(), loadOpnameStock()]);
+    await Promise.all([loadDashboard(), loadProducts(), loadPosStock(), loadOpnameStock(), loadPosHistory()]);
     sound.success();
     showReceipt({
       ...receipt,
@@ -470,6 +694,7 @@ function showReceipt(receipt) {
 
   const cashReceived = receipt.cashReceived || receipt.total;
   const change = receipt.changeAmount || 0;
+  const timestamp = receipt.timestamp ? new Date(receipt.timestamp).toLocaleString('id-ID') : new Date().toLocaleString('id-ID');
 
   openModal(`
     <div class="modal-header">
@@ -480,28 +705,29 @@ function showReceipt(receipt) {
       <div class="receipt-header">
         <h3>URBAN MART MINIMARKET</h3>
         <p>Jl. Merdeka No. 45, Jakarta Pusat · Telp: 021-5550101</p>
-        <p>No: <b>${escapeHtml(receipt.receiptNumber || receipt.no_transaksi)}</b> · ${new Date().toLocaleString('id-ID')}</p>
+        <p>No: <b>${escapeHtml(receipt.receiptNumber || receipt.no_transaksi)}</b> · ${timestamp}</p>
+        ${receipt.cashier ? `<p>Kasir: ${escapeHtml(receipt.cashier)}</p>` : ''}
       </div>
       <div style="border-top:1px dashed #d6d3d1;border-bottom:1px dashed #d6d3d1;padding:8px 0;margin:8px 0">
         ${details}
       </div>
-      <div class="receipt-summary-row">
+      <div class="receipt-total-row">
         <span>TOTAL TAGIHAN:</span>
-        <b style="font-size:13px">${rupiah(receipt.total || receipt.total_bayar)}</b>
+        <b>${rupiah(receipt.total || receipt.total_bayar)}</b>
       </div>
-      <div class="receipt-summary-row" style="font-size:11px">
+      <div class="receipt-summary-row">
         <span>Metode Pembayaran:</span>
         <b>${escapeHtml(receipt.paymentMethod || receipt.metode_pembayaran)}</b>
       </div>
-      <div class="receipt-summary-row" style="font-size:11px">
+      <div class="receipt-summary-row">
         <span>Uang Diterima:</span>
         <span>${rupiah(cashReceived)}</span>
       </div>
-      <div class="receipt-summary-row" style="font-size:11px">
+      <div class="receipt-summary-row">
         <span>Kembalian:</span>
         <b>${rupiah(change)}</b>
       </div>
-      <div style="text-align:center;font-size:10px;color:#78716c;margin-top:10px">
+      <div style="text-align:center;font-size:10px;opacity:0.75;margin-top:12px">
         Terima kasih telah berbelanja di Urban Mart!<br>
         Barang yang sudah dibeli dapat ditukar maksimal 1x24 jam dengan struk fisik.
       </div>
@@ -550,7 +776,7 @@ function printReceipt(receipt) {
       <div class="center">
         <h1>URBAN MART</h1>
         <p>Jl. Merdeka No. 45, Jakarta · Telp 021-5550101</p>
-        <p>No: ${escapeHtml(receipt.receiptNumber || receipt.no_transaksi)}<br>${new Date().toLocaleString('id-ID')}</p>
+        <p>No: ${escapeHtml(receipt.receiptNumber || receipt.no_transaksi)}<br>${new Date(receipt.timestamp || Date.now()).toLocaleString('id-ID')}</p>
       </div>
       <hr>
       <table>${rows}</table>
@@ -594,12 +820,15 @@ function closeModal() {
   document.querySelector('#active-modal')?.remove();
 }
 
-// Global ESC key to close modal
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') {
+    closeModal();
+    document.querySelector('#notif-popover')?.classList.remove('open');
+  }
   if (e.key === 'F2') {
     e.preventDefault();
     switchPage('pos');
+    switchPosTab('terminal');
     document.querySelector('#pos-search')?.focus();
   }
 });
@@ -611,6 +840,14 @@ document.addEventListener('keydown', (e) => {
 async function loadPurchases() {
   const rows = await api('/api/purchases');
   state.purchases = rows;
+
+  const pendingCount = rows.filter((r) => r.status_pembayaran !== 'Diterima').length;
+  const poBadge = document.querySelector('#nav-badge-po');
+  if (poBadge) {
+    poBadge.textContent = String(pendingCount);
+    poBadge.style.display = pendingCount > 0 ? 'inline-flex' : 'none';
+  }
+
   const tbody = document.querySelector('#purchase-table');
   if (!tbody) return;
 
@@ -626,7 +863,7 @@ async function loadPurchases() {
           : `<button class="action-button" data-receive-purchase="${item.id_pembelian}"><i data-lucide="package-check"></i> Terima</button>`}
       </div>
     `;
-    
+
     return `
       <tr>
         <td><b>${escapeHtml(item.no_faktur)}</b></td>
@@ -1009,7 +1246,7 @@ async function openReturnModal() {
         <button class="button button-primary"><i data-lucide="check"></i> Simpan Transaksi Retur</button>
       </div>
     </form>
-  `);
+  `, true);
 
   const syncRefOptions = () => {
     const isSupplier = document.querySelector('#ret-modal-type').value === 'Ke Supplier';
@@ -1042,7 +1279,7 @@ async function openReturnModal() {
       <select class="return-product">${productOptions}</select>
       <input class="return-quantity" type="number" min="1" value="1" placeholder="Qty">
       <input class="return-price" type="number" min="0" placeholder="Harga">
-      <select class="return-reason" style="width:110px">
+      <select class="return-reason">
         <option value="Rusak">Rusak</option>
         <option value="Kadaluarsa">Kadaluarsa</option>
         <option value="Tidak Sesuai">Tidak Sesuai</option>
@@ -1094,13 +1331,127 @@ async function openReturnModal() {
 }
 
 // ============================================================================
-// TAB 5: Stock Opname (Audit Fisik vs Sistem)
+// TAB 5: Stock Opname (Audit Fisik vs Sistem + Riwayat Audit)
 // ============================================================================
 
 async function loadOpnameStock() {
   const warehouse = document.querySelector('#opname-warehouse')?.value || 1;
   state.opnameStock = await api(`/api/stock?warehouseId=${encodeURIComponent(warehouse)}`);
   renderOpnameRows();
+}
+
+async function loadOpnameHistory() {
+  state.opnameHistory = await api('/api/opname');
+  renderOpnameHistory();
+}
+
+function renderOpnameHistory() {
+  const tbody = document.querySelector('#opname-history-table');
+  if (!tbody) return;
+
+  tbody.innerHTML = state.opnameHistory.length ? state.opnameHistory.map((item) => {
+    const net = Number(item.total_selisih || 0);
+    const diffClass = net > 0 ? 'positive' : net < 0 ? 'negative' : 'zero';
+    const diffLabel = net > 0 ? `+${net}` : String(net);
+    return `
+      <tr>
+        <td><b style="font-family:var(--font-mono)">${escapeHtml(item.no_opname)}</b></td>
+        <td>${new Date(item.tanggal_opname).toLocaleString('id-ID')}</td>
+        <td>${escapeHtml(item.nama_gudang)}</td>
+        <td>${escapeHtml(item.nama_karyawan)}</td>
+        <td>${item.jumlah_item} item</td>
+        <td class="difference ${diffClass}">${diffLabel} unit</td>
+        <td><span class="badge safe">${escapeHtml(item.status_opname)}</span></td>
+        <td>
+          <button class="action-button secondary" data-view-opname="${item.id_opname}">
+            <i data-lucide="eye"></i> Detail
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('') : '<tr><td colspan="8" class="empty-state">Belum ada riwayat sesi audit stock opname.</td></tr>';
+
+  tbody.querySelectorAll('[data-view-opname]').forEach((btn) => {
+    btn.addEventListener('click', () => openOpnameDetailModal(Number(btn.dataset.viewOpname)));
+  });
+
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function openOpnameDetailModal(opnameId) {
+  try {
+    const data = await api(`/api/opname/${opnameId}`);
+    const itemsRows = data.items.map((item, idx) => {
+      const diff = Number(item.selisih || 0);
+      const cls = diff > 0 ? 'positive' : diff < 0 ? 'negative' : 'zero';
+      return `
+        <tr>
+          <td style="color:var(--text-muted)">${idx + 1}</td>
+          <td><b>${escapeHtml(item.nama_produk)}</b><br><small style="font-family:var(--font-mono);color:var(--text-muted)">${escapeHtml(item.barcode)}</small></td>
+          <td>${item.stok_sistem} ${escapeHtml(item.satuan)}</td>
+          <td><b>${item.stok_fisik}</b> ${escapeHtml(item.satuan)}</td>
+          <td class="difference ${cls}">${diff > 0 ? '+' : ''}${diff}</td>
+          <td><span class="badge ${diff === 0 ? 'safe' : diff > 0 ? 'safe' : 'out'}">${escapeHtml(item.jenis_penyesuaian)}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    openModal(`
+      <div class="modal-header">
+        <div>
+          <h2>Detail Hasil Audit Stock Opname</h2>
+          <p class="muted" style="margin:2px 0 0 0">No. Opname: <b style="font-family:var(--font-mono);color:var(--indigo-600)">${escapeHtml(data.no_opname)}</b></p>
+        </div>
+        <button class="modal-close" id="modal-close-btn" aria-label="Tutup"><i data-lucide="x"></i></button>
+      </div>
+
+      <div class="detail-card-grid">
+        <div class="detail-info-item">
+          <span class="detail-label">Lokasi Gudang</span>
+          <span class="detail-val">${escapeHtml(data.nama_gudang)}</span>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Auditor / Petugas</span>
+          <span class="detail-val">${escapeHtml(data.nama_karyawan)}</span>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Waktu Audit</span>
+          <span class="detail-val">${new Date(data.tanggal_opname).toLocaleString('id-ID')}</span>
+        </div>
+        <div class="detail-info-item">
+          <span class="detail-label">Catatan Audit</span>
+          <span class="detail-val">${escapeHtml(data.keterangan || '—')}</span>
+        </div>
+      </div>
+
+      <label style="margin-bottom:8px">Rincian Rekonsiliasi Produk (${data.items.length} item):</label>
+      <div class="detail-items-table-wrap">
+        <table class="detail-items-table">
+          <thead>
+            <tr>
+              <th style="width:30px">NO</th>
+              <th>PRODUK</th>
+              <th>STOK SISTEM</th>
+              <th>STOK FISIK</th>
+              <th>SELISIH</th>
+              <th>PENYESUAIAN</th>
+            </tr>
+          </thead>
+          <tbody>${itemsRows}</tbody>
+        </table>
+      </div>
+
+      <div class="modal-actions">
+        <button class="button button-secondary" id="modal-close-action">Tutup</button>
+      </div>
+    `, true);
+
+    document.querySelector('#modal-close-btn')?.addEventListener('click', closeModal);
+    document.querySelector('#modal-close-action')?.addEventListener('click', closeModal);
+    if (window.lucide) window.lucide.createIcons();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 function renderOpnameRows() {
@@ -1190,7 +1541,7 @@ async function saveOpname() {
     });
     toast(`Opname ${result.opnameNumber} berhasil disimpan. Saldo stok telah disinkronkan via trigger.`);
     document.querySelector('#opname-notes').value = '';
-    await Promise.all([loadDashboard(), loadOpnameStock()]);
+    await Promise.all([loadDashboard(), loadOpnameStock(), loadOpnameHistory()]);
   } catch (error) { toast(error.message, true); }
 }
 
@@ -1212,15 +1563,13 @@ async function loadReports(period = null) {
   state.reports = { sales: salesData, movement: movementRows };
   const { summary, fastMoving, paymentBreakdown, dailySales } = salesData;
 
-  // KPI Cards
-  document.querySelector('#rep-omzet').textContent = rupiah(summary.total_omzet);
-  document.querySelector('#rep-transaksi').textContent = Number(summary.total_transaksi).toLocaleString('id-ID');
-  document.querySelector('#rep-avg').textContent = rupiah(summary.rata_rata_transaksi);
+  animateMetric('#rep-omzet', summary.total_omzet || 0, rupiah);
+  animateMetric('#rep-transaksi', summary.total_transaksi || 0);
+  animateMetric('#rep-avg', summary.rata_rata_transaksi || 0, rupiah);
   document.querySelector('#rep-top-product').textContent = fastMoving.length
     ? `${fastMoving[0].nama_produk} (${fastMoving[0].total_terjual} ${fastMoving[0].satuan})`
     : '—';
 
-  // Fast Moving Table with Medals
   document.querySelector('#fast-moving-table').innerHTML = fastMoving.length ? fastMoving.map((item, index) => {
     const rankClass = index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : 'rank-other';
     const rankIcon = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
@@ -1241,7 +1590,6 @@ async function loadReports(period = null) {
     `;
   }).join('') : '<tr><td colspan="6" class="empty-state">Belum ada transaksi penjualan produk pada periode ini.</td></tr>';
 
-  // Stock Movement Audit Matrix
   document.querySelector('#stock-movement-table').innerHTML = movementRows.length ? movementRows.map((item) => `
     <tr>
       <td>
@@ -1263,7 +1611,6 @@ async function loadReports(period = null) {
     </tr>
   `).join('') : '<tr><td colspan="9" class="empty-state">Data kartu mutasi persediaan belum tersedia.</td></tr>';
 
-  // Render Charts
   renderCharts(dailySales, paymentBreakdown);
   if (window.lucide) window.lucide.createIcons();
 }
@@ -1271,7 +1618,11 @@ async function loadReports(period = null) {
 function renderCharts(dailySales, paymentBreakdown) {
   if (typeof Chart === 'undefined') return;
 
-  // Chart 1: Daily Sales Trend (Line Chart)
+  const isDark = theme.current === 'dark';
+  const textColor = isDark ? '#cbd5e1' : '#475569';
+  const gridColor = isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(148, 163, 184, 0.18)';
+  const cardBg = isDark ? '#111827' : '#ffffff';
+
   const salesCanvas = document.querySelector('#sales-trend-chart');
   if (salesCanvas) {
     if (state.charts.salesTrend) state.charts.salesTrend.destroy();
@@ -1285,7 +1636,7 @@ function renderCharts(dailySales, paymentBreakdown) {
 
     const ctx = salesCanvas.getContext('2d');
     const gradient = ctx.createLinearGradient(0, 0, 0, 240);
-    gradient.addColorStop(0, 'rgba(79, 70, 229, 0.28)');
+    gradient.addColorStop(0, isDark ? 'rgba(129, 140, 248, 0.35)' : 'rgba(79, 70, 229, 0.28)');
     gradient.addColorStop(1, 'rgba(79, 70, 229, 0.00)');
 
     state.charts.salesTrend = new Chart(salesCanvas, {
@@ -1295,13 +1646,13 @@ function renderCharts(dailySales, paymentBreakdown) {
         datasets: [{
           label: 'Omzet Harian (Rp)',
           data: dataValues.length ? dataValues : [0],
-          borderColor: '#4f46e5',
+          borderColor: isDark ? '#818cf8' : '#4f46e5',
           backgroundColor: gradient,
           borderWidth: 2.5,
           tension: 0.35,
           fill: true,
-          pointBackgroundColor: '#4f46e5',
-          pointBorderColor: '#ffffff',
+          pointBackgroundColor: isDark ? '#818cf8' : '#4f46e5',
+          pointBorderColor: cardBg,
           pointBorderWidth: 2,
           pointRadius: 4,
           pointHoverRadius: 6
@@ -1320,11 +1671,14 @@ function renderCharts(dailySales, paymentBreakdown) {
         },
         scales: {
           x: {
-            grid: { display: false }
+            grid: { display: false },
+            ticks: { color: textColor }
           },
           y: {
             beginAtZero: true,
+            grid: { color: gridColor },
             ticks: {
+              color: textColor,
               callback: (val) => Number(val) >= 1000 ? `${(val / 1000).toFixed(0)}k` : val
             }
           }
@@ -1333,7 +1687,6 @@ function renderCharts(dailySales, paymentBreakdown) {
     });
   }
 
-  // Chart 2: Payment Method Breakdown (Doughnut Chart)
   const payCanvas = document.querySelector('#payment-chart');
   if (payCanvas) {
     if (state.charts.paymentBreakdown) state.charts.paymentBreakdown.destroy();
@@ -1349,7 +1702,7 @@ function renderCharts(dailySales, paymentBreakdown) {
           data: payValues.length ? payValues : [1],
           backgroundColor: ['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6'],
           borderWidth: 2,
-          borderColor: '#ffffff'
+          borderColor: cardBg
         }]
       },
       options: {
@@ -1358,7 +1711,7 @@ function renderCharts(dailySales, paymentBreakdown) {
         plugins: {
           legend: {
             position: 'bottom',
-            labels: { boxWidth: 12, padding: 14 }
+            labels: { boxWidth: 12, padding: 14, color: textColor }
           },
           tooltip: {
             callbacks: {
@@ -1631,8 +1984,35 @@ async function deleteSupplier(id) {
 }
 
 // ============================================================================
-// Page Navigation & Event Binding
+// Page Navigation, Sub-Tabs & Event Binding
 // ============================================================================
+
+function closeMobileSidebar() {
+  document.querySelector('.sidebar')?.classList.remove('open');
+  document.querySelector('#sidebar-overlay')?.classList.remove('show');
+}
+
+function switchPosTab(tabName) {
+  document.querySelectorAll('#pos-subtabs .segmented-tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.posTab === tabName);
+  });
+  document.querySelector('#pos-panel-terminal')?.classList.toggle('active', tabName === 'terminal');
+  document.querySelector('#pos-panel-history')?.classList.toggle('active', tabName === 'history');
+  if (tabName === 'history') {
+    loadPosHistory().catch((err) => toast(err.message, true));
+  }
+}
+
+function switchOpnameTab(tabName) {
+  document.querySelectorAll('#opname-subtabs .segmented-tab').forEach((t) => {
+    t.classList.toggle('active', t.dataset.opnameTab === tabName);
+  });
+  document.querySelector('#opname-panel-form')?.classList.toggle('active', tabName === 'form');
+  document.querySelector('#opname-panel-history')?.classList.toggle('active', tabName === 'history');
+  if (tabName === 'history') {
+    loadOpnameHistory().catch((err) => toast(err.message, true));
+  }
+}
 
 function switchPage(name) {
   document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${name}`));
@@ -1641,16 +2021,30 @@ function switchPage(name) {
   const active = document.querySelector(`.nav-link[data-page="${name}"]`);
   const breadcrumbCurrent = document.querySelector('#breadcrumb-current');
   if (breadcrumbCurrent && active) {
-    breadcrumbCurrent.textContent = active.textContent.trim();
+    const labelText = [...active.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent.trim())
+      .join(' ');
+    breadcrumbCurrent.textContent = labelText || active.textContent.trim();
   }
 
-  document.querySelector('.sidebar')?.classList.remove('open');
+  closeMobileSidebar();
 
   if (name === 'dashboard') loadDashboard().catch((error) => toast(error.message, true));
-  if (name === 'pos') loadPosStock().catch((error) => toast(error.message, true));
+  if (name === 'pos') {
+    loadPosStock().catch((error) => toast(error.message, true));
+    if (document.querySelector('#pos-panel-history')?.classList.contains('active')) {
+      loadPosHistory().catch((error) => toast(error.message, true));
+    }
+  }
   if (name === 'purchases') loadPurchases().catch((error) => toast(error.message, true));
   if (name === 'returns') loadReturns().catch((error) => toast(error.message, true));
-  if (name === 'opname') loadOpnameStock().catch((error) => toast(error.message, true));
+  if (name === 'opname') {
+    loadOpnameStock().catch((error) => toast(error.message, true));
+    if (document.querySelector('#opname-panel-history')?.classList.contains('active')) {
+      loadOpnameHistory().catch((error) => toast(error.message, true));
+    }
+  }
   if (name === 'reports') loadReports().catch((error) => toast(error.message, true));
   if (name === 'products') loadProducts().catch((error) => toast(error.message, true));
   if (name === 'suppliers') loadSuppliers().catch((error) => toast(error.message, true));
@@ -1659,16 +2053,83 @@ function switchPage(name) {
 // Global Event Listeners
 document.querySelectorAll('.nav-link').forEach((button) => button.addEventListener('click', () => switchPage(button.dataset.page)));
 document.querySelectorAll('[data-goto]').forEach((button) => button.addEventListener('click', () => switchPage(button.dataset.goto)));
-document.querySelector('#mobile-menu')?.addEventListener('click', () => document.querySelector('.sidebar')?.classList.toggle('open'));
 
-document.querySelector('#refresh-button')?.addEventListener('click', () => {
-  Promise.all([loadDashboard(), loadProducts(), loadSuppliers(), loadPurchases()])
-    .then(() => toast('Seluruh data berhasil disegarkan.'))
-    .catch((error) => toast(error.message, true));
+document.querySelector('#mobile-menu')?.addEventListener('click', () => {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.querySelector('#sidebar-overlay');
+  const isOpen = sidebar?.classList.toggle('open');
+  overlay?.classList.toggle('show', Boolean(isOpen));
+});
+document.querySelector('#sidebar-overlay')?.addEventListener('click', closeMobileSidebar);
+
+document.querySelector('#theme-toggle')?.addEventListener('click', () => theme.toggle());
+
+// Notification Bell Popover
+document.querySelector('#notif-button')?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  document.querySelector('#notif-popover')?.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  const wrapper = document.querySelector('.notif-wrapper');
+  if (wrapper && !wrapper.contains(e.target)) {
+    document.querySelector('#notif-popover')?.classList.remove('open');
+  }
+});
+document.querySelector('#notif-goto-po')?.addEventListener('click', () => {
+  document.querySelector('#notif-popover')?.classList.remove('open');
+  switchPage('purchases');
+  setTimeout(openPurchaseModal, 120);
 });
 
-document.querySelector('#stock-refresh')?.addEventListener('click', () => loadDashboard().catch((error) => toast(error.message, true)));
+// Database Architecture Inspector Card
+document.querySelector('#open-db-inspector')?.addEventListener('click', openDbInspectorModal);
+document.querySelector('#open-db-inspector')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    openDbInspectorModal();
+  }
+});
+
+// Refresh Button with Spin Animation
+document.querySelector('#refresh-button')?.addEventListener('click', () => {
+  const btn = document.querySelector('#refresh-button');
+  btn?.classList.add('spinning');
+  Promise.all([loadDashboard(), loadProducts(), loadSuppliers(), loadPurchases()])
+    .then(() => toast('Seluruh data berhasil disegarkan.'))
+    .catch((error) => toast(error.message, true))
+    .finally(() => setTimeout(() => btn?.classList.remove('spinning'), 350));
+});
+
+document.querySelector('#stock-refresh')?.addEventListener('click', () => {
+  const btn = document.querySelector('#stock-refresh');
+  btn?.classList.add('spinning');
+  loadDashboard()
+    .catch((error) => toast(error.message, true))
+    .finally(() => setTimeout(() => btn?.classList.remove('spinning'), 350));
+});
 document.querySelector('#warehouse-filter')?.addEventListener('change', () => loadDashboard().catch((error) => toast(error.message, true)));
+
+// Clickable Dashboard KPI & Status Filter Chips
+document.querySelectorAll('#page-dashboard .kpi-card[data-stock-filter]').forEach((card) => {
+  card.addEventListener('click', () => {
+    setStockStatusFilter(card.dataset.stockFilter);
+    document.querySelector('#stock-table')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+});
+document.querySelectorAll('#stock-status-chips .chip').forEach((chip) => {
+  chip.addEventListener('click', () => setStockStatusFilter(chip.dataset.status));
+});
+
+// POS Sub-Tabs & History Search
+document.querySelectorAll('#pos-subtabs .segmented-tab').forEach((tab) => {
+  tab.addEventListener('click', () => switchPosTab(tab.dataset.posTab));
+});
+document.querySelector('#pos-history-search')?.addEventListener('input', renderPosHistory);
+
+// Opname Sub-Tabs
+document.querySelectorAll('#opname-subtabs .segmented-tab').forEach((tab) => {
+  tab.addEventListener('click', () => switchOpnameTab(tab.dataset.opnameTab));
+});
 
 document.querySelector('#pos-warehouse')?.addEventListener('change', () => {
   state.cart.clear();
@@ -1680,7 +2141,7 @@ document.querySelector('#opname-warehouse')?.addEventListener('change', () => lo
 document.querySelector('#stock-search')?.addEventListener('input', renderStock);
 document.querySelector('#pos-search')?.addEventListener('input', renderPosProducts);
 
-// Barcode scanner keydown listener on POS search: Enter adds product directly!
+// Barcode scanner keydown listener on POS search
 document.querySelector('#pos-search')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
@@ -1689,19 +2150,19 @@ document.querySelector('#pos-search')?.addEventListener('keydown', (e) => {
 
     const matchedProduct = state.products.find((p) => p.aktif && (p.kode_barcode === barcodeInput || p.barcode === barcodeInput));
     if (matchedProduct) {
-      sound.scan();
-      changeCart(matchedProduct.id_produk, 1);
-      e.target.value = '';
-      renderPosProducts();
-      toast(`+1 ${matchedProduct.nama_produk} ditambahkan via barcode!`);
+      if (changeCart(matchedProduct.id_produk, 1)) {
+        e.target.value = '';
+        renderPosProducts();
+        toast(`+1 ${matchedProduct.nama_produk} ditambahkan via barcode!`);
+      }
     } else {
       const filtered = state.products.filter((p) => p.aktif && p.nama_produk.toLowerCase().includes(barcodeInput.toLowerCase()));
       if (filtered.length === 1) {
-        sound.scan();
-        changeCart(filtered[0].id_produk, 1);
-        e.target.value = '';
-        renderPosProducts();
-        toast(`+1 ${filtered[0].nama_produk} ditambahkan!`);
+        if (changeCart(filtered[0].id_produk, 1)) {
+          e.target.value = '';
+          renderPosProducts();
+          toast(`+1 ${filtered[0].nama_produk} ditambahkan!`);
+        }
       } else {
         sound.error();
         toast('Produk dengan barcode tersebut tidak ditemukan.', true);
@@ -1791,6 +2252,7 @@ document.querySelector('#print-reports')?.addEventListener('click', () => window
 
 (async function initialize() {
   try {
+    theme.apply(theme.current);
     startLiveClock();
     sound.updateUI();
 
@@ -1806,6 +2268,7 @@ document.querySelector('#print-reports')?.addEventListener('click', () => window
       loadDashboard(),
       loadProducts(),
       loadSuppliers(),
+      loadPurchases(),
       loadOpnameStock(),
       loadPosStock()
     ]);

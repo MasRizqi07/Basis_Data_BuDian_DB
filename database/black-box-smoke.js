@@ -18,9 +18,20 @@ async function rollbackTest(connection, label, run) {
   }
 }
 
+function formatError(error) {
+  if (!error) return 'Kesalahan tidak diketahui';
+  const code = error.code || error.errors?.[0]?.code || '';
+  const detail = error.message || error.errors?.map((e) => e.message).filter(Boolean).join('; ') || String(error);
+  if (code === 'ECONNREFUSED') {
+    return `${code}: Koneksi ke MySQL ditolak. Pastikan service MySQL84 sudah berjalan (jalankan 'Start-Service MySQL84' di PowerShell Administrator).`;
+  }
+  return code ? `${code}: ${detail}` : detail;
+}
+
 async function main() {
-  const connection = await pool.getConnection();
+  let connection;
   try {
+    connection = await pool.getConnection();
     console.log('=== MENJALANKAN 10 SKENARIO BLACK BOX TESTING (MONITORING VS CONTROL) ===\n');
 
     // TC-01: Monitoring KPI & Real-time Stock Dashboard
@@ -340,12 +351,12 @@ async function main() {
 
     console.log('=== SELURUH 10 TEST CASE BLACK BOX LOLOS DENGAN STATUS: PASS ===');
   } finally {
-    connection.release();
+    if (connection) connection.release();
     await pool.end();
   }
 }
 
 main().catch((error) => {
-  console.error('Black-box smoke test gagal:', error.message);
+  console.error('Black-box smoke test gagal:', formatError(error));
   process.exitCode = 1;
 });

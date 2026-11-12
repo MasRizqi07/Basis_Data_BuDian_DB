@@ -46,4 +46,22 @@ async function getSummary(req, res) {
   res.json({ data: rows[0] });
 }
 
-module.exports = { getStock, getSummary };
+async function getCriticalStock(req, res) {
+  const parameters = [];
+  let filter = '';
+  if (req.query.warehouseId) {
+    filter = 'WHERE id_gudang = ?';
+    parameters.push(requiredPositiveInteger(req.query.warehouseId, 'ID gudang'));
+  }
+  const [rows] = await pool.execute(
+    `SELECT id_produk, barcode, nama_produk, satuan, id_gudang, nama_gudang,
+            jumlah_stok, stok_minimum, status_stok, tanggal_update
+       FROM v_ringkasan_stok_kritis
+       ${filter}
+      ORDER BY FIELD(status_stok, 'Habis', 'Menipis'), jumlah_stok ASC, nama_produk ASC`,
+    parameters
+  );
+  res.json({ data: rows });
+}
+
+module.exports = { getCriticalStock, getStock, getSummary };

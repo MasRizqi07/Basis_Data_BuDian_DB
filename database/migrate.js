@@ -423,7 +423,12 @@ module.exports = { splitSqlStatements };
 
 if (require.main === module) {
   migrate().catch((error) => {
-    console.error('Migration gagal:', error.message);
+    const code = error.code || error.errors?.[0]?.code || '';
+    const detail = error.message || error.errors?.map((e) => e.message).filter(Boolean).join('; ') || String(error);
+    const hint = code === 'ECONNREFUSED'
+      ? " (Service MySQL84 belum aktif. Jalankan 'Start-Service MySQL84' via PowerShell Administrator)"
+      : '';
+    console.error(`Migration gagal: ${code ? `${code}: ` : ''}${detail}${hint}`);
     process.exitCode = 1;
   });
 }

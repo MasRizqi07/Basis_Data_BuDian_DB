@@ -234,3 +234,53 @@ test('POST /api/masters/products rejects invalid EAN-13 barcode', async () => {
   const data = await res.json();
   assert.match(data.error, /EAN-13/);
 });
+
+test('GET /api/stock/critical returns critical stock view entries', async () => {
+  const res = await fetch(`${baseUrl}/api/stock/critical`);
+  assert.equal(res.status, 200);
+  const { data } = await res.json();
+  assert.ok(Array.isArray(data));
+  if (data.length > 0) {
+    assert.ok('nama_produk' in data[0]);
+    assert.ok(['Menipis', 'Habis'].includes(data[0].status_stok));
+  }
+});
+
+test('GET /api/pos returns list of recent POS transactions', async () => {
+  const res = await fetch(`${baseUrl}/api/pos`);
+  assert.equal(res.status, 200);
+  const { data } = await res.json();
+  assert.ok(Array.isArray(data) && data.length > 0);
+  assert.ok('no_transaksi' in data[0]);
+  assert.ok('total_bayar' in data[0]);
+  assert.ok('jumlah_item' in data[0]);
+});
+
+test('GET /api/opname and GET /api/opname/:id return opname audit history and details', async () => {
+  const resList = await fetch(`${baseUrl}/api/opname`);
+  assert.equal(resList.status, 200);
+  const { data: list } = await resList.json();
+  assert.ok(Array.isArray(list));
+  if (list.length > 0) {
+    const resDetail = await fetch(`${baseUrl}/api/opname/${list[0].id_opname}`);
+    assert.equal(resDetail.status, 200);
+    const { data: detail } = await resDetail.json();
+    assert.equal(detail.id_opname, list[0].id_opname);
+    assert.ok(Array.isArray(detail.items));
+  }
+
+  const resMissing = await fetch(`${baseUrl}/api/opname/999999`);
+  assert.equal(resMissing.status, 404);
+  const missingData = await resMissing.json();
+  assert.match(missingData.error, /tidak ditemukan/);
+});
+
+test('GET /api/masters/db-overview returns 14 base tables, 2 triggers, and 2 views', async () => {
+  const res = await fetch(`${baseUrl}/api/masters/db-overview`);
+  assert.equal(res.status, 200);
+  const { data } = await res.json();
+  assert.ok(data.database);
+  assert.equal(data.baseTables.length, 14);
+  assert.equal(data.triggers.length, 2);
+  assert.equal(data.views.length, 2);
+});

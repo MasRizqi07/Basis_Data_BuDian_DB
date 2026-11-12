@@ -4,6 +4,7 @@ const { asyncHandler } = require('../utils/http');
 
 const router = express.Router();
 router.get('/references', asyncHandler(master.getReferenceData));
+router.get('/db-overview', asyncHandler(master.getDbOverview));
 router.get('/products', asyncHandler(master.listProducts));
 router.post('/products', asyncHandler(master.createProduct));
 router.put('/products/:id', asyncHandler(master.updateProduct));
